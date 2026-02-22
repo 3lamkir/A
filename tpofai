@@ -1,0 +1,298 @@
+-- [[ LOADER ]]
+local player = game:GetService("Players").LocalPlayer
+local screenGui = Instance.new("ScreenGui")
+screenGui.Parent = player:WaitForChild("PlayerGui")
+screenGui.ResetOnSpawn = false
+
+local loader = Instance.new("Frame")
+loader.Size = UDim2.new(0,200,0,60)
+loader.Position = UDim2.new(0.5,-100,0.5,-30)
+loader.BackgroundColor3 = Color3.fromRGB(30,30,30)
+loader.BorderSizePixel = 0
+loader.Active = false
+loader.Draggable = false
+loader.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0,8)
+corner.Parent = loader
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1,0,0,30)
+title.Position = UDim2.new(0,0,0,5)
+title.BackgroundTransparency = 1
+title.Text = "TP HUB"
+title.TextColor3 = Color3.new(1,1,1)
+title.TextSize = 20
+title.Parent = loader
+
+local loadText = Instance.new("TextLabel")
+loadText.Size = UDim2.new(1,0,0,20)
+loadText.Position = UDim2.new(0,0,0,35)
+loadText.BackgroundTransparency = 1
+loadText.Text = "Loading..."
+loadText.TextColor3 = Color3.fromRGB(200,200,200)
+loadText.TextSize = 14
+loadText.Parent = loader
+
+local progress = Instance.new("Frame")
+progress.Size = UDim2.new(0,0,0,3)
+progress.Position = UDim2.new(0,0,1,-3)
+progress.BackgroundColor3 = Color3.fromRGB(0,150,255)
+progress.BorderSizePixel = 0
+progress.Parent = loader
+
+for i = 1, 100 do
+	progress.Size = UDim2.new(0,i*2,0,3)
+	loadText.Text = "Loading... " .. i .. "%"
+	task.wait(0.01)
+end
+
+task.wait(0.3)
+loader:Destroy()
+
+-- [[ MAIN WINDOW ]]
+local mainGui = Instance.new("ScreenGui")
+mainGui.Parent = player:WaitForChild("PlayerGui")
+
+-- Кнопка Hide/SHOW (ОТДЕЛЬНО, СКРУГЛЕННАЯ)
+local hideBtn = Instance.new("TextButton")
+hideBtn.Size = UDim2.new(0,50,0,50)
+hideBtn.Position = UDim2.new(0,20,0,90)
+hideBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
+hideBtn.Text = "🧿"
+hideBtn.TextColor3 = Color3.new(1,1,1)
+hideBtn.TextSize = 24
+hideBtn.BorderSizePixel = 0
+hideBtn.Active = true
+hideBtn.Draggable = true
+hideBtn.Parent = mainGui
+
+-- СКРУГЛЕНИЕ кнопки (круглая)
+local hideCorner = Instance.new("UICorner")
+hideCorner.CornerRadius = UDim.new(1,0)
+hideCorner.Parent = hideBtn
+
+-- Основное окно
+local main = Instance.new("Frame")
+main.Size = UDim2.new(0,400,0,230)  -- Уменьшил высоту (убрал статус)
+main.Position = UDim2.new(0,80,0,150)
+main.BackgroundColor3 = Color3.fromRGB(20,20,20)
+main.BorderSizePixel = 0
+main.Active = true
+main.Draggable = true
+main.Visible = true
+main.Parent = mainGui
+
+Instance.new("UICorner", main).CornerRadius = UDim.new(0,8)
+
+-- Title
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1,0,0,35)
+titleBar.BackgroundColor3 = Color3.fromRGB(30,30,30)
+titleBar.Parent = main
+
+Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0,8)
+
+local titleText = Instance.new("TextLabel")
+titleText.Size = UDim2.new(1,0,1,0)
+titleText.BackgroundTransparency = 1
+titleText.Text = "🚀 TELEPORT PANEL"
+titleText.TextColor3 = Color3.new(1,1,1)
+titleText.TextSize = 16
+titleText.Parent = titleBar
+
+-- Left side
+local left = Instance.new("Frame")
+left.Size = UDim2.new(0.5, -5, 1, -45)
+left.Position = UDim2.new(0,5,0,40)
+left.BackgroundTransparency = 1
+left.Parent = main
+
+-- Right side
+local right = Instance.new("Frame")
+right.Size = UDim2.new(0.5, -5, 1, -45)
+right.Position = UDim2.new(0.5,0,0,40)
+right.BackgroundTransparency = 1
+right.Parent = main
+
+-- Input boxes
+local function createBox(placeholder, posY)
+	local box = Instance.new("TextBox")
+	box.Size = UDim2.new(1,-10,0,35)
+	box.Position = UDim2.new(0,0,0,posY)
+	box.PlaceholderText = placeholder
+	box.Text = ""
+	box.BackgroundColor3 = Color3.fromRGB(40,40,40)
+	box.TextColor3 = Color3.new(1,1,1)
+	box.BorderSizePixel = 0
+	box.TextSize = 16
+	box.TextXAlignment = Enum.TextXAlignment.Left
+	box.Parent = left
+	
+	local boxCorner = Instance.new("UICorner")
+boxCorner.CornerRadius = UDim.new(0,6)
+	boxCorner.Parent = box
+	
+	return box
+end
+
+local xBox = createBox("X", 5)
+local yBox = createBox("Y", 45)
+local zBox = createBox("Z", 85)
+
+-- Current position with XYZ labels
+local posLabel = Instance.new("TextLabel")
+posLabel.Size = UDim2.new(1,-10,0,45)
+posLabel.Position = UDim2.new(0,0,0,130)
+posLabel.BackgroundColor3 = Color3.fromRGB(30,30,30)
+posLabel.TextColor3 = Color3.new(1,1,1)
+posLabel.Text = "X: 0.0  Y: 0.0  Z: 0.0"
+posLabel.TextSize = 14
+posLabel.Parent = left
+
+local posCorner = Instance.new("UICorner")
+posCorner.CornerRadius = UDim.new(0,6)
+posCorner.Parent = posLabel
+
+-- Variables
+local savedCoords = nil
+local autoOn = false
+local interval = 1000
+local lastTime = 0
+local conn = nil
+
+-- Functions
+local function getHRP()
+	local char = player.Character
+	if char then
+		return char:FindFirstChild("HumanoidRootPart")
+	end
+	return nil
+end
+
+local function saveCoords()
+	local x = tonumber(xBox.Text:match("[%-]?%d+%.?%d*"))
+	local y = tonumber(yBox.Text:match("[%-]?%d+%.?%d*"))
+	local z = tonumber(zBox.Text:match("[%-]?%d+%.?%d*"))
+	if x and y and z then
+		savedCoords = Vector3.new(x, y, z)
+	end
+end
+
+local function tp()
+	local hrp = getHRP()
+	if hrp and savedCoords then
+		hrp.CFrame = CFrame.new(savedCoords)
+	end
+end
+
+-- Buttons with emojis
+local saveBtn = Instance.new("TextButton")
+saveBtn.Size = UDim2.new(1,-5,0,35)
+saveBtn.Position = UDim2.new(0,0,0,5)
+saveBtn.Text = "💾 SAVE"
+saveBtn.BackgroundColor3 = Color3.fromRGB(50,150,200)
+saveBtn.TextColor3 = Color3.new(1,1,1)
+saveBtn.TextSize = 14
+saveBtn.BorderSizePixel = 0
+saveBtn.Parent = right
+Instance.new("UICorner", saveBtn).CornerRadius = UDim.new(0,6)
+saveBtn.MouseButton1Click:Connect(function()
+	local hrp = getHRP()
+	if hrp then
+		local pos = hrp.Position
+		xBox.Text = string.format("%.1f", pos.X)
+		yBox.Text = string.format("%.1f", pos.Y)
+		zBox.Text = string.format("%.1f", pos.Z)
+		saveCoords()
+	end
+end)
+
+local tpBtn = Instance.new("TextButton")
+tpBtn.Size = UDim2.new(1,-5,0,35)
+tpBtn.Position = UDim2.new(0,0,0,45)
+tpBtn.Text = "⚡ TP"
+tpBtn.BackgroundColor3 = Color3.fromRGB(200,100,0)
+tpBtn.TextColor3 = Color3.new(1,1,1)
+tpBtn.TextSize = 14
+tpBtn.BorderSizePixel = 0
+tpBtn.Parent = right
+Instance.new("UICorner", tpBtn).CornerRadius = UDim.new(0,6)
+tpBtn.MouseButton1Click:Connect(tp)
+
+local autoBtn = Instance.new("TextButton")
+autoBtn.Size = UDim2.new(1,-5,0,35)
+autoBtn.Position = UDim2.new(0,0,0,85)
+autoBtn.Text = "⏸ AUTO"
+autoBtn.BackgroundColor3 = Color3.fromRGB(60,60,60)
+autoBtn.TextColor3 = Color3.new(1,1,1)
+autoBtn.TextSize = 14
+autoBtn.BorderSizePixel = 0
+autoBtn.Parent = right
+Instance.new("UICorner", autoBtn).CornerRadius = UDim.new(0,6)
+autoBtn.MouseButton1Click:Connect(function()
+	autoOn = not autoOn
+	if autoOn then
+		autoBtn.BackgroundColor3 = Color3.fromRGB(0,150,0)
+		autoBtn.Text = "▶ AUTO"
+		lastTime = tick()
+		if conn then conn:Disconnect() end
+		conn = game:GetService("RunService").Heartbeat:Connect(function()
+			if autoOn and savedCoords then
+				local now = tick()
+				if now - lastTime >= (interval / 1000) then
+					tp()
+					lastTime = now
+				end
+			end
+		end)
+	else
+		autoBtn.BackgroundColor3 = Color3.fromRGB(60,60,60)
+		autoBtn.Text = "⏸ AUTO"
+		if conn then
+			conn:Disconnect()
+			conn = nil
+		end
+	end
+end)
+
+-- Speed box
+local speedBox = Instance.new("TextBox")
+speedBox.Size = UDim2.new(1,-5,0,35)
+speedBox.Position = UDim2.new(0,0,0,125)
+speedBox.BackgroundColor3 = Color3.fromRGB(40,40,40)
+speedBox.TextColor3 = Color3.new(1,1,1)
+speedBox.Text = "1000"
+speedBox.TextSize = 14
+speedBox.BorderSizePixel = 0
+speedBox.PlaceholderText = "ms"
+speedBox.Parent = right
+Instance.new("UICorner", speedBox).CornerRadius = UDim.new(0,6)
+speedBox.FocusLost:Connect(function()
+	local val = tonumber(speedBox.Text:match("[%-]?%d+%.?%d*"))
+	if val then
+		interval = math.max(1, math.min(10000, val))
+		speedBox.Text = tostring(math.floor(interval))
+	end
+end)
+
+-- Hide/SHOW button function
+hideBtn.MouseButton1Click:Connect(function()
+	main.Visible = not main.Visible
+	hideBtn.Text = main.Visible and "🧿" or "🧿"
+end)
+
+-- Update pos with XYZ labels
+game:GetService("RunService").RenderStepped:Connect(function()
+	local hrp = getHRP()
+	if hrp then
+		local pos = hrp.Position
+		posLabel.Text = string.format("X: %.1f  Y: %.1f  Z: %.1f", pos.X, pos.Y, pos.Z)
+	end
+end)
+
+-- Auto save
+xBox.FocusLost:Connect(saveCoords)
+yBox.FocusLost:Connect(saveCoords)
+zBox.FocusLost:Connect(saveCoords)

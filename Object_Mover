@@ -1,0 +1,1036 @@
+local TweenService = game:GetService("TweenService")
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+
+local currentTween = nil
+local currentWalkConnection = nil
+local currentTarget = nil
+local targetMarker = nil
+local currentObjectName = ""
+local textBox = nil
+local saveFileName = "object_mover_settings.json"
+local dontAskFileName = "object_mover_dontask.json"
+local selectingObject = false
+local selectionGui = nil
+local selectionConnection = nil
+local speed = 50
+local walkSpeed = 16
+local currentMode = "TWEEN"
+local mainGuiCreated = false
+local MIN_DISTANCE = 0.1
+local isMoving = false
+
+local colors = {
+	background = Color3.fromRGB(25, 25, 30),
+	dark = Color3.fromRGB(35, 35, 40),
+	medium = Color3.fromRGB(45, 45, 50),
+	light = Color3.fromRGB(60, 60, 65),
+	accent = Color3.fromRGB(0, 120, 255),
+	success = Color3.fromRGB(0, 200, 100),
+	danger = Color3.fromRGB(255, 70, 70),
+	text = Color3.fromRGB(255, 255, 255),
+	textDim = Color3.fromRGB(180, 180, 180)
+}
+
+local function createTargetMarker(position)
+	if targetMarker then
+		targetMarker:Destroy()
+	end
+	
+	local marker = Instance.new("Part")
+	marker.Size = Vector3.new(2, 2, 2)
+	marker.Position = position
+	marker.Anchored = true
+	marker.CanCollide = false
+	marker.CanTouch = false
+	marker.CanQuery = false
+	marker.BrickColor = BrickColor.new("Bright red")
+	marker.Material = Enum.Material.Neon
+	marker.Transparency = 0.3
+	marker.Parent = workspace
+	
+	local billboard = Instance.new("BillboardGui")
+	billboard.Size = UDim2.new(0, 50, 0, 50)
+	billboard.StudsOffset = Vector3.new(0, 3, 0)
+	billboard.AlwaysOnTop = true
+	billboard.Parent = marker
+	
+	local circle = Instance.new("Frame")
+	circle.Size = UDim2.new(1, 0, 1, 0)
+	circle.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+	circle.BackgroundTransparency = 0.5
+	circle.Parent = billboard
+	
+	local uiCorner = Instance.new("UICorner")
+	uiCorner.CornerRadius = UDim.new(1, 0)
+	uiCorner.Parent = circle
+	
+	targetMarker = marker
+	return marker
+end
+
+local function removeTargetMarker()
+	if targetMarker then
+		targetMarker:Destroy()
+		targetMarker = nil
+	end
+end
+
+local function updateTargetMarker(position)
+	if targetMarker then
+		targetMarker.Position = position
+	else
+		createTargetMarker(position)
+	end
+end
+
+local function getTargetPart(object)
+	if object:IsA("BasePart") then
+		return object
+	elseif object:IsA("Model") then
+		return object:FindFirstChildWhichIsA("BasePart", true)
+	end
+	return nil
+end
+
+local function findNextObject(objectName)
+	local parts = workspace:GetDescendants()
+	for _, part in ipairs(parts) do
+		if part.Name == objectName and part:IsA("BasePart") and part ~= currentTarget then
+			return part
+		end
+	end
+	return nil
+end
+
+local function getCurrentPlaceId()
+	return game.PlaceId
+end
+
+local function loadSettings(file)
+	local success, data = pcall(function()
+		return HttpService:JSONDecode(readfile(file))
+	end)
+	return success and data or {}
+end
+
+local function saveSettings(file, data)
+	pcall(function() writefile(file, HttpService:JSONEncode(data)) end)
+end
+
+local function getDontAsk()
+	local s = loadSettings(dontAskFileName)
+	return s[tostring(getCurrentPlaceId())] or false
+end
+
+local function setDontAsk(v)
+	local s = loadSettings(dontAskFileName)
+	s[tostring(getCurrentPlaceId())] = v
+	saveSettings(dontAskFileName, s)
+end
+
+local function getSavedSettings()
+	local s = loadSettings(saveFileName)
+	return s[tostring(getCurrentPlaceId())] or nil
+end
+
+local function autoSave()
+	if currentObjectName ~= "" then
+		local s = loadSettings(saveFileName)
+		s[tostring(getCurrentPlaceId())] = {
+			objectName = currentObjectName,
+			mode = currentMode,
+			speed = speed,
+			walkSpeed = walkSpeed
+		}
+		saveSettings(saveFileName, s)
+		print("Auto-saved:", currentObjectName)
+	end
+end
+
+local function stopMoving()
+	if currentTween then
+		currentTween:Cancel()
+		currentTween = nil
+	end
+	
+	if currentWalkConnection then
+		currentWalkConnection:Disconnect()
+		currentWalkConnection = nil
+	end
+	
+	local char = player.Character
+	if char and char:FindFirstChild("Humanoid") then
+		char.Humanoid:MoveTo(Vector3.new(0,0,0))
+	end
+	
+	isMoving = false
+	removeTargetMarker()
+	print("Movement stopped")
+end
+
+local function teleportToObject(objectName)
+	stopMoving()
+	
+	local found = workspace:FindFirstChild(objectName, true)
+	if not found then
+		print("Object not found:", objectName)
+		return false
+	end
+	
+	local targetPart = getTargetPart(found)
+	if not targetPart then
+		print("No BasePart inside:", objectName)
+		return false
+	end
+	
+	local char = player.Character
+	if not char then return false end
+	
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return false end
+	
+	local direction = (hrp.Position - targetPart.Position).Unit
+	local targetPos = targetPart.Position + direction * MIN_DISTANCE
+	hrp.CFrame = CFrame.new(targetPos)
+	
+	currentTarget = targetPart
+	updateTargetMarker(targetPart.Position + Vector3.new(0, 3, 0))
+	
+	print("Teleported to:", targetPart.Name)
+	return true
+end
+
+local function walkToObject(objectName)
+	stopMoving()
+	
+	local found = workspace:FindFirstChild(objectName, true)
+	if not found then
+		print("Object not found:", objectName)
+		return false
+	end
+	
+	local targetPart = getTargetPart(found)
+	if not targetPart then
+		print("No BasePart inside:", objectName)
+		return false
+	end
+	
+	local char = player.Character
+	if not char then return false end
+	
+	local humanoid = char:FindFirstChild("Humanoid")
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	
+	if not humanoid or not hrp then return false end
+	
+	currentTarget = targetPart
+	updateTargetMarker(targetPart.Position + Vector3.new(0, 3, 0))
+	
+	humanoid.WalkSpeed = walkSpeed
+	
+	local targetPos = targetPart.Position + Vector3.new(0, MIN_DISTANCE, 0)
+	
+	humanoid:MoveTo(targetPos)
+	
+	currentWalkConnection = RunService.Heartbeat:Connect(function()
+		if not char or not char.Parent then
+			stopMoving()
+			return
+		end
+		
+		if not targetPart or not targetPart.Parent then
+			stopMoving()
+			return
+		end
+		
+		targetPos = targetPart.Position + Vector3.new(0, MIN_DISTANCE, 0)
+		humanoid:MoveTo(targetPos)
+		
+		local distance = (hrp.Position - targetPos).Magnitude
+		
+		if distance < MIN_DISTANCE + 0.5 then
+			hrp.CFrame = CFrame.new(targetPos)
+			stopMoving()
+			print("Reached:", targetPart.Name)
+		end
+		
+		updateTargetMarker(targetPart.Position + Vector3.new(0, 3, 0))
+	end)
+	
+	isMoving = true
+	print("Walking to:", targetPart.Name, "speed:", walkSpeed)
+	return true
+end
+
+local function tweenToObject(objectName)
+	stopMoving()
+	
+	local found = workspace:FindFirstChild(objectName, true)
+	if not found then
+		print("Object not found:", objectName)
+		return false
+	end
+	
+	local targetPart = getTargetPart(found)
+	if not targetPart then
+		print("No BasePart inside:", objectName)
+		return false
+	end
+	
+	local char = player.Character
+	if not char then return false end
+	
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return false end
+	
+	currentTarget = targetPart
+	updateTargetMarker(targetPart.Position + Vector3.new(0, 3, 0))
+	
+	local function startTweenToTarget()
+		if not currentTarget or not currentTarget.Parent then
+			local newTarget = findNextObject(objectName)
+			if newTarget then
+				currentTarget = newTarget
+				updateTargetMarker(currentTarget.Position + Vector3.new(0, 3, 0))
+			else
+				stopMoving()
+				return false
+			end
+		end
+		
+		local direction = (hrp.Position - currentTarget.Position).Unit
+		local targetPos = currentTarget.Position + direction * MIN_DISTANCE
+		
+		local distance = (hrp.Position - targetPos).Magnitude
+		
+		if distance < MIN_DISTANCE + 0.5 then
+			task.spawn(function()
+				local newTarget = findNextObject(objectName)
+				if newTarget then
+					currentTarget = newTarget
+					updateTargetMarker(currentTarget.Position + Vector3.new(0, 3, 0))
+					startTweenToTarget()
+				else
+					stopMoving()
+				end
+			end)
+			return true
+		end
+		
+		local travelTime = math.max(0.1, distance / speed)
+		
+		local tweenInfo = TweenInfo.new(
+			travelTime,
+			Enum.EasingStyle.Quad,
+			Enum.EasingDirection.Out
+		)
+		
+		local goal = {
+			CFrame = CFrame.new(targetPos)
+		}
+		
+		currentTween = TweenService:Create(hrp, tweenInfo, goal)
+		
+		currentTween.Completed:Connect(function()
+			hrp.CFrame = CFrame.new(targetPos)
+			
+			local newTarget = findNextObject(objectName)
+			if newTarget then
+				currentTarget = newTarget
+				updateTargetMarker(currentTarget.Position + Vector3.new(0, 3, 0))
+				startTweenToTarget()
+			else
+				currentTween = nil
+				isMoving = false
+				removeTargetMarker()
+				print("All objects collected:", objectName)
+			end
+		end)
+		
+		currentTween:Play()
+		return true
+	end
+	
+	isMoving = true
+	print("Tween to:", targetPart.Name)
+	return startTweenToTarget()
+end
+
+local function startObjectSelection()
+	if selectingObject then return end
+	selectingObject = true
+	
+	selectionGui = Instance.new("ScreenGui")
+	selectionGui.Name = "ObjectSelectionGUI"
+	selectionGui.Parent = player:WaitForChild("PlayerGui")
+	selectionGui.ResetOnSpawn = false
+	selectionGui.IgnoreGuiInset = true
+	
+	local overlay = Instance.new("Frame")
+	overlay.Size = UDim2.new(1, 0, 1, 0)
+	overlay.BackgroundColor3 = Color3.new(0, 0, 0)
+	overlay.BackgroundTransparency = 0.7
+	overlay.Active = true
+	overlay.ZIndex = 10
+	overlay.Parent = selectionGui
+	
+	local hintFrame = Instance.new("Frame")
+	hintFrame.Size = UDim2.new(0, 280, 0, 100)
+	hintFrame.Position = UDim2.new(0.5, -140, 0.4, -50)
+	hintFrame.BackgroundColor3 = colors.background
+	hintFrame.Parent = overlay
+	
+	local hintCorner = Instance.new("UICorner")
+	hintCorner.CornerRadius = UDim.new(0, 12)
+	hintCorner.Parent = hintFrame
+	
+	local hintText = Instance.new("TextLabel")
+	hintText.Size = UDim2.new(1, -20, 0, 40)
+	hintText.Position = UDim2.new(0, 10, 0, 15)
+	hintText.BackgroundTransparency = 1
+	hintText.Text = "Tap on any object"
+	hintText.TextColor3 = colors.text
+	hintText.TextSize = 18
+	hintText.Font = Enum.Font.GothamBold
+	hintText.Parent = hintFrame
+	
+	local hintSub = Instance.new("TextLabel")
+	hintSub.Size = UDim2.new(1, -20, 0, 25)
+	hintSub.Position = UDim2.new(0, 10, 0, 55)
+	hintSub.BackgroundTransparency = 1
+	hintSub.Text = "(one tap to select)"
+	hintSub.TextColor3 = colors.textDim
+	hintSub.TextSize = 14
+	hintSub.Font = Enum.Font.Gotham
+	hintSub.Parent = hintFrame
+	
+	local cancelBtn = Instance.new("TextButton")
+	cancelBtn.Size = UDim2.new(0, 120, 0, 35)
+	cancelBtn.Position = UDim2.new(0.5, -60, 0.7, 0)
+	cancelBtn.BackgroundColor3 = colors.danger
+	cancelBtn.Text = "CANCEL"
+	cancelBtn.TextColor3 = colors.text
+	cancelBtn.TextSize = 14
+	cancelBtn.Font = Enum.Font.GothamBold
+	cancelBtn.Parent = overlay
+	
+	local cancelCorner = Instance.new("UICorner")
+	cancelCorner.CornerRadius = UDim.new(0, 8)
+	cancelCorner.Parent = cancelBtn
+	
+	cancelBtn.MouseButton1Click:Connect(function()
+		if selectionGui then selectionGui:Destroy() end
+		if selectionConnection then selectionConnection:Disconnect() end
+		selectingObject = false
+	end)
+	
+	local objectSelected = false
+	
+	local function handleInput()
+		if objectSelected then return end
+		
+		local camera = workspace.CurrentCamera
+		local mousePos = UserInputService:GetMouseLocation()
+		local ray = camera:ScreenPointToRay(mousePos.X, mousePos.Y)
+		local result = workspace:Raycast(ray.Origin, ray.Direction * 1000)
+		
+		if result and result.Instance and result.Instance:IsA("BasePart") then
+			objectSelected = true
+			local target = result.Instance
+			currentObjectName = target.Name
+			if textBox then textBox.Text = target.Name end
+			autoSave()
+			if selectionGui then selectionGui:Destroy() end
+			selectingObject = false
+			print("Selected object:", target.Name)
+		end
+	end
+	
+	selectionConnection = UserInputService.TouchStarted:Connect(handleInput)
+	selectionConnection = UserInputService.InputBegan:Connect(function(i, g)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 then
+			handleInput()
+		end
+	end)
+end
+
+local function createMainGUI(initialObject, initialMode, initialSpeed, initialWalkSpeed)
+	if mainGuiCreated then return end
+	mainGuiCreated = true
+	
+	if initialSpeed then speed = initialSpeed end
+	if initialWalkSpeed then walkSpeed = initialWalkSpeed end
+	if initialMode then currentMode = initialMode end
+	
+	local screenGui = Instance.new("ScreenGui")
+	screenGui.Name = "ObjectMoverGUI"
+	screenGui.Parent = player:WaitForChild("PlayerGui")
+	screenGui.ResetOnSpawn = false
+	screenGui.IgnoreGuiInset = true
+	
+	local mainFrame = Instance.new("Frame")
+	mainFrame.Size = UDim2.new(0, 420, 0, 360)
+	mainFrame.Position = UDim2.new(0.5, -210, 0.5, -180)
+	mainFrame.BackgroundColor3 = colors.background
+	mainFrame.Active = true
+	mainFrame.Draggable = true
+	mainFrame.Parent = screenGui
+	
+	local mainCorner = Instance.new("UICorner")
+	mainCorner.CornerRadius = UDim.new(0, 16)
+	mainCorner.Parent = mainFrame
+	
+	local titleBar = Instance.new("Frame")
+	titleBar.Size = UDim2.new(1, 0, 0, 50)
+	titleBar.BackgroundColor3 = colors.dark
+	titleBar.Parent = mainFrame
+	
+	local titleCorner = Instance.new("UICorner")
+	titleCorner.CornerRadius = UDim.new(0, 16)
+	titleCorner.Parent = titleBar
+	
+	local titleIcon = Instance.new("TextLabel")
+	titleIcon.Size = UDim2.new(0, 40, 1, 0)
+	titleIcon.Position = UDim2.new(0, 10, 0, 0)
+	titleIcon.BackgroundTransparency = 1
+	titleIcon.Text = "🎯"
+	titleIcon.TextSize = 24
+	titleIcon.Font = Enum.Font.GothamBold
+	titleIcon.Parent = titleBar
+	
+	local titleText = Instance.new("TextLabel")
+	titleText.Size = UDim2.new(0, 200, 1, 0)
+	titleText.Position = UDim2.new(0, 50, 0, 0)
+	titleText.BackgroundTransparency = 1
+	titleText.Text = "Object Mover"
+	titleText.TextColor3 = colors.text
+	titleText.TextSize = 18
+	titleText.TextXAlignment = Enum.TextXAlignment.Left
+	titleText.Font = Enum.Font.GothamBold
+	titleText.Parent = titleBar
+	
+	local hideBtn = Instance.new("TextButton")
+	hideBtn.Size = UDim2.new(0, 35, 0, 35)
+	hideBtn.Position = UDim2.new(1, -45, 0, 7)
+	hideBtn.BackgroundColor3 = colors.danger
+	hideBtn.Text = "✕"
+	hideBtn.TextColor3 = colors.text
+	hideBtn.TextSize = 18
+	hideBtn.Font = Enum.Font.GothamBold
+	hideBtn.Parent = titleBar
+	
+	local hideCorner = Instance.new("UICorner")
+	hideCorner.CornerRadius = UDim.new(0, 10)
+	hideCorner.Parent = hideBtn
+	
+	local contentFrame = Instance.new("Frame")
+	contentFrame.Size = UDim2.new(1, -30, 1, -70)
+	contentFrame.Position = UDim2.new(0, 15, 0, 60)
+	contentFrame.BackgroundTransparency = 1
+	contentFrame.Parent = mainFrame
+	
+	local inputFrame = Instance.new("Frame")
+	inputFrame.Size = UDim2.new(1, 0, 0, 45)
+	inputFrame.BackgroundColor3 = colors.medium
+	inputFrame.Parent = contentFrame
+	
+	local inputCorner = Instance.new("UICorner")
+	inputCorner.CornerRadius = UDim.new(0, 12)
+	inputCorner.Parent = inputFrame
+	
+	textBox = Instance.new("TextBox")
+	textBox.Size = UDim2.new(0.8, -5, 1, 0)
+	textBox.Position = UDim2.new(0, 10, 0, 0)
+	textBox.BackgroundTransparency = 1
+	textBox.PlaceholderText = "Enter object name..."
+	textBox.PlaceholderColor3 = colors.textDim
+	textBox.Text = initialObject or ""
+	textBox.TextColor3 = colors.text
+	textBox.TextSize = 14
+	textBox.Font = Enum.Font.Gotham
+	textBox.ClearTextOnFocus = false
+	textBox.Parent = inputFrame
+	
+	local selectBtn = Instance.new("TextButton")
+	selectBtn.Size = UDim2.new(0.15, -5, 0, 35)
+	selectBtn.Position = UDim2.new(0.85, 0, 0, 5)
+	selectBtn.BackgroundColor3 = colors.accent
+	selectBtn.Text = "🔍"
+	selectBtn.TextColor3 = colors.text
+	selectBtn.TextSize = 18
+	selectBtn.Font = Enum.Font.GothamBold
+	selectBtn.Parent = inputFrame
+	
+	local selectCorner = Instance.new("UICorner")
+	selectCorner.CornerRadius = UDim.new(0, 10)
+	selectCorner.Parent = selectBtn
+	
+	local modeLabel = Instance.new("TextLabel")
+	modeLabel.Size = UDim2.new(1, 0, 0, 25)
+	modeLabel.Position = UDim2.new(0, 0, 0, 55)
+	modeLabel.BackgroundTransparency = 1
+	modeLabel.Text = "Movement Mode:"
+	modeLabel.TextColor3 = colors.textDim
+	modeLabel.TextSize = 12
+	modeLabel.TextXAlignment = Enum.TextXAlignment.Left
+	modeLabel.Font = Enum.Font.Gotham
+	modeLabel.Parent = contentFrame
+	
+	local modeFrame = Instance.new("Frame")
+	modeFrame.Size = UDim2.new(1, 0, 0, 40)
+	modeFrame.Position = UDim2.new(0, 0, 0, 80)
+	modeFrame.BackgroundTransparency = 1
+	modeFrame.Parent = contentFrame
+	
+	local function createModeButton(name, text, color, pos)
+		local btn = Instance.new("TextButton")
+		btn.Size = UDim2.new(0.3, -3, 1, 0)
+		btn.Position = UDim2.new(pos, pos > 0 and 3 or 0, 0, 0)
+		btn.BackgroundColor3 = color
+		btn.Text = text
+		btn.TextColor3 = colors.text
+		btn.TextSize = 14
+		btn.Font = Enum.Font.GothamBold
+		btn.Parent = modeFrame
+		
+		local btnCorner = Instance.new("UICorner")
+		btnCorner.CornerRadius = UDim.new(0, 8)
+		btnCorner.Parent = btn
+		
+		return btn
+	end
+	
+	local tpBtn = createModeButton("TP", "⚡ TP", currentMode == "TP" and colors.accent or colors.medium, 0)
+	local walkBtn = createModeButton("WALK", "🚶 Walk", currentMode == "WALK" and colors.accent or colors.medium, 0.33)
+	local tweenBtn = createModeButton("TWEEN", "✨ Tween", currentMode == "TWEEN" and colors.accent or colors.medium, 0.66)
+	
+	tpBtn.MouseButton1Click:Connect(function()
+		tpBtn.BackgroundColor3 = colors.accent
+		walkBtn.BackgroundColor3 = colors.medium
+		tweenBtn.BackgroundColor3 = colors.medium
+		currentMode = "TP"
+		autoSave()
+	end)
+	
+	walkBtn.MouseButton1Click:Connect(function()
+		walkBtn.BackgroundColor3 = colors.accent
+		tpBtn.BackgroundColor3 = colors.medium
+		tweenBtn.BackgroundColor3 = colors.medium
+		currentMode = "WALK"
+		autoSave()
+	end)
+	
+	tweenBtn.MouseButton1Click:Connect(function()
+		tweenBtn.BackgroundColor3 = colors.accent
+		tpBtn.BackgroundColor3 = colors.medium
+		walkBtn.BackgroundColor3 = colors.medium
+		currentMode = "TWEEN"
+		autoSave()
+	end)
+	
+	local speedFrame = Instance.new("Frame")
+	speedFrame.Size = UDim2.new(1, 0, 0, 60)
+	speedFrame.Position = UDim2.new(0, 0, 0, 135)
+	speedFrame.BackgroundTransparency = 1
+	speedFrame.Parent = contentFrame
+	
+	local speedLabel = Instance.new("TextLabel")
+	speedLabel.Size = UDim2.new(0.4, -5, 0, 25)
+	speedLabel.Position = UDim2.new(0, 0, 0, 0)
+	speedLabel.BackgroundTransparency = 1
+	speedLabel.Text = "Tween Speed:"
+	speedLabel.TextColor3 = colors.textDim
+	speedLabel.TextSize = 12
+	speedLabel.TextXAlignment = Enum.TextXAlignment.Left
+	speedLabel.Font = Enum.Font.Gotham
+	speedLabel.Parent = speedFrame
+	
+	local speedValue = Instance.new("TextLabel")
+	speedValue.Size = UDim2.new(0.2, -5, 0, 25)
+	speedValue.Position = UDim2.new(0.4, 0, 0, 0)
+	speedValue.BackgroundTransparency = 1
+	speedValue.Text = tostring(speed)
+	speedValue.TextColor3 = colors.success
+	speedValue.TextSize = 14
+	speedValue.Font = Enum.Font.GothamBold
+	speedValue.Parent = speedFrame
+	
+	local speedBox = Instance.new("TextBox")
+	speedBox.Size = UDim2.new(0.3, -5, 0, 25)
+	speedBox.Position = UDim2.new(0.7, 0, 0, 0)
+	speedBox.BackgroundColor3 = colors.medium
+	speedBox.PlaceholderText = "1-200"
+	speedBox.Text = tostring(speed)
+	speedBox.TextColor3 = colors.text
+	speedBox.TextSize = 12
+	speedBox.Font = Enum.Font.Gotham
+	speedBox.Parent = speedFrame
+	
+	local speedCorner = Instance.new("UICorner")
+	speedCorner.CornerRadius = UDim.new(0, 6)
+	speedCorner.Parent = speedBox
+	
+	local walkSpeedLabel = Instance.new("TextLabel")
+	walkSpeedLabel.Size = UDim2.new(0.4, -5, 0, 25)
+	walkSpeedLabel.Position = UDim2.new(0, 0, 0, 30)
+	walkSpeedLabel.BackgroundTransparency = 1
+	walkSpeedLabel.Text = "Walk Speed:"
+	walkSpeedLabel.TextColor3 = colors.textDim
+	walkSpeedLabel.TextSize = 12
+	walkSpeedLabel.TextXAlignment = Enum.TextXAlignment.Left
+	walkSpeedLabel.Font = Enum.Font.Gotham
+	walkSpeedLabel.Parent = speedFrame
+	
+	local walkSpeedValue = Instance.new("TextLabel")
+	walkSpeedValue.Size = UDim2.new(0.2, -5, 0, 25)
+	walkSpeedValue.Position = UDim2.new(0.4, 0, 0, 30)
+	walkSpeedValue.BackgroundTransparency = 1
+	walkSpeedValue.Text = tostring(walkSpeed)
+	walkSpeedValue.TextColor3 = colors.success
+	walkSpeedValue.TextSize = 14
+	walkSpeedValue.Font = Enum.Font.GothamBold
+	walkSpeedValue.Parent = speedFrame
+	
+	local walkSpeedBox = Instance.new("TextBox")
+	walkSpeedBox.Size = UDim2.new(0.3, -5, 0, 25)
+	walkSpeedBox.Position = UDim2.new(0.7, 0, 0, 30)
+	walkSpeedBox.BackgroundColor3 = colors.medium
+	walkSpeedBox.PlaceholderText = "1-200"
+	walkSpeedBox.Text = tostring(walkSpeed)
+	walkSpeedBox.TextColor3 = colors.text
+	walkSpeedBox.TextSize = 12
+	walkSpeedBox.Font = Enum.Font.Gotham
+	walkSpeedBox.Parent = speedFrame
+	
+	local walkSpeedCorner = Instance.new("UICorner")
+	walkSpeedCorner.CornerRadius = UDim.new(0, 6)
+	walkSpeedCorner.Parent = walkSpeedBox
+	
+	local actionFrame = Instance.new("Frame")
+	actionFrame.Size = UDim2.new(1, 0, 0, 55)
+	actionFrame.Position = UDim2.new(0, 0, 0, 205)
+	actionFrame.BackgroundTransparency = 1
+	actionFrame.Parent = contentFrame
+	
+	local moveBtn = Instance.new("TextButton")
+	moveBtn.Size = UDim2.new(0.45, -5, 1, 0)
+	moveBtn.Position = UDim2.new(0, 0, 0, 0)
+	moveBtn.BackgroundColor3 = colors.success
+	moveBtn.Text = "▶ MOVE"
+	moveBtn.TextColor3 = colors.text
+	moveBtn.TextSize = 16
+	moveBtn.Font = Enum.Font.GothamBold
+	moveBtn.Parent = actionFrame
+	
+	local moveCorner = Instance.new("UICorner")
+	moveCorner.CornerRadius = UDim.new(0, 10)
+	moveCorner.Parent = moveBtn
+	
+	local stopBtn = Instance.new("TextButton")
+	stopBtn.Size = UDim2.new(0.45, -5, 1, 0)
+	stopBtn.Position = UDim2.new(0.55, 0, 0, 0)
+	stopBtn.BackgroundColor3 = colors.danger
+	stopBtn.Text = "⏹ STOP"
+	stopBtn.TextColor3 = colors.text
+	stopBtn.TextSize = 16
+	stopBtn.Font = Enum.Font.GothamBold
+	stopBtn.Parent = actionFrame
+	
+	local stopCorner = Instance.new("UICorner")
+	stopCorner.CornerRadius = UDim.new(0, 10)
+	stopCorner.Parent = stopBtn
+	
+	local statusLabel = Instance.new("TextLabel")
+	statusLabel.Size = UDim2.new(1, 0, 0, 30)
+	statusLabel.Position = UDim2.new(0, 0, 0, 270)
+	statusLabel.BackgroundTransparency = 1
+	statusLabel.Text = "Ready"
+	statusLabel.TextColor3 = colors.textDim
+	statusLabel.TextSize = 12
+	statusLabel.Font = Enum.Font.Gotham
+	statusLabel.Parent = contentFrame
+	
+	speedBox.FocusLost:Connect(function(enter)
+		if enter then
+			local newSpeed = tonumber(speedBox.Text)
+			if newSpeed and newSpeed >= 1 and newSpeed <= 200 then
+				speed = newSpeed
+				speedValue.Text = tostring(speed)
+				autoSave()
+			else
+				speedBox.Text = tostring(speed)
+			end
+		end
+	end)
+	
+	walkSpeedBox.FocusLost:Connect(function(enter)
+		if enter then
+			local newSpeed = tonumber(walkSpeedBox.Text)
+			if newSpeed and newSpeed >= 1 and newSpeed <= 200 then
+				walkSpeed = newSpeed
+				walkSpeedValue.Text = tostring(walkSpeed)
+				autoSave()
+			else
+				walkSpeedBox.Text = tostring(walkSpeed)
+			end
+		end
+	end)
+	
+	moveBtn.MouseEnter:Connect(function()
+		moveBtn.BackgroundColor3 = Color3.fromRGB(0, 220, 120)
+		statusLabel.Text = "Move to object"
+	end)
+	moveBtn.MouseLeave:Connect(function()
+		moveBtn.BackgroundColor3 = colors.success
+		statusLabel.Text = "Ready"
+	end)
+	
+	stopBtn.MouseEnter:Connect(function()
+		stopBtn.BackgroundColor3 = Color3.fromRGB(255, 90, 90)
+		statusLabel.Text = "Stop movement"
+	end)
+	stopBtn.MouseLeave:Connect(function()
+		stopBtn.BackgroundColor3 = colors.danger
+		statusLabel.Text = "Ready"
+	end)
+	
+	hideBtn.MouseEnter:Connect(function()
+		hideBtn.BackgroundColor3 = Color3.fromRGB(255, 90, 90)
+	end)
+	hideBtn.MouseLeave:Connect(function()
+		hideBtn.BackgroundColor3 = colors.danger
+	end)
+	
+	selectBtn.MouseEnter:Connect(function()
+		selectBtn.BackgroundColor3 = Color3.fromRGB(30, 150, 255)
+		statusLabel.Text = "Select object in world"
+	end)
+	selectBtn.MouseLeave:Connect(function()
+		selectBtn.BackgroundColor3 = colors.accent
+		statusLabel.Text = "Ready"
+	end)
+	
+	hideBtn.MouseButton1Click:Connect(function()
+		mainFrame.Visible = false
+		local showBtn = Instance.new("TextButton")
+		showBtn.Size = UDim2.new(0, 80, 0, 35)
+		showBtn.Position = UDim2.new(0, 10, 0, 10)
+		showBtn.BackgroundColor3 = colors.background
+		showBtn.Text = "SHOW"
+		showBtn.TextColor3 = colors.text
+		showBtn.TextSize = 12
+		showBtn.Font = Enum.Font.GothamBold
+		showBtn.Parent = screenGui
+		showBtn.Draggable = true
+		
+		local showCorner = Instance.new("UICorner")
+		showCorner.CornerRadius = UDim.new(0, 8)
+		showCorner.Parent = showBtn
+		
+		showBtn.MouseButton1Click:Connect(function()
+			mainFrame.Visible = true
+			showBtn:Destroy()
+		end)
+	end)
+	
+	selectBtn.MouseButton1Click:Connect(startObjectSelection)
+	
+	local function startMovement()
+		if textBox.Text == "" then 
+			statusLabel.Text = "Enter object name!"
+			return 
+		end
+		
+		currentObjectName = textBox.Text
+		statusLabel.Text = "Searching: " .. currentObjectName
+		
+		local success = false
+		
+		if currentMode == "TP" then
+			success = teleportToObject(currentObjectName)
+		elseif currentMode == "WALK" then
+			success = walkToObject(currentObjectName)
+		else
+			success = tweenToObject(currentObjectName)
+		end
+		
+		if success then
+			statusLabel.Text = "Moving to: " .. currentObjectName
+		else
+			statusLabel.Text = "Object not found: " .. currentObjectName
+		end
+		
+		autoSave()
+	end
+	
+	moveBtn.MouseButton1Click:Connect(startMovement)
+	
+	stopBtn.MouseButton1Click:Connect(function()
+		stopMoving()
+		statusLabel.Text = "Movement stopped"
+	end)
+	
+	textBox.FocusLost:Connect(function(enter)
+		if enter and textBox.Text ~= "" then
+			startMovement()
+		end
+	end)
+	
+	local debounce = false
+	textBox:GetPropertyChangedSignal("Text"):Connect(function()
+		if textBox.Text ~= "" and not debounce then
+			debounce = true
+			task.wait(1)
+			currentObjectName = textBox.Text
+			autoSave()
+			debounce = false
+		end
+	end)
+end
+
+local saved = getSavedSettings()
+local dontAsk = getDontAsk()
+
+if saved and not dontAsk then
+	local dialogGui = Instance.new("ScreenGui")
+	dialogGui.Name = "LoadDialog"
+	dialogGui.Parent = player:WaitForChild("PlayerGui")
+	dialogGui.IgnoreGuiInset = true
+	
+	local frame = Instance.new("Frame")
+	frame.Size = UDim2.new(0, 320, 0, 180)
+	frame.Position = UDim2.new(0.5, -160, 0.5, -90)
+	frame.BackgroundColor3 = colors.background
+	frame.Active = true
+	frame.Draggable = true
+	frame.Parent = dialogGui
+	
+	local frameCorner = Instance.new("UICorner")
+	frameCorner.CornerRadius = UDim.new(0, 16)
+	frameCorner.Parent = frame
+	
+	local title = Instance.new("TextLabel")
+	title.Size = UDim2.new(1, -20, 0, 40)
+	title.Position = UDim2.new(0, 10, 0, 15)
+	title.BackgroundTransparency = 1
+	title.Text = "Load saved settings?"
+	title.TextColor3 = colors.text
+	title.TextSize = 18
+	title.Font = Enum.Font.GothamBold
+	title.Parent = frame
+	
+	local info = Instance.new("TextLabel")
+	info.Size = UDim2.new(1, -20, 0, 30)
+	info.Position = UDim2.new(0, 10, 0, 55)
+	info.BackgroundTransparency = 1
+	info.Text = string.format("%s | %s", saved.objectName or "?", saved.mode or "TWEEN")
+	info.TextColor3 = colors.textDim
+	info.TextSize = 14
+	info.Font = Enum.Font.Gotham
+	info.Parent = frame
+	
+	local checkFrame = Instance.new("Frame")
+	checkFrame.Size = UDim2.new(1, -20, 0, 30)
+	checkFrame.Position = UDim2.new(0, 10, 0, 90)
+	checkFrame.BackgroundTransparency = 1
+	checkFrame.Parent = frame
+	
+	local checkBox = Instance.new("TextButton")
+	checkBox.Size = UDim2.new(0, 18, 0, 18)
+	checkBox.Position = UDim2.new(0, 0, 0, 6)
+	checkBox.BackgroundColor3 = colors.medium
+	checkBox.Text = ""
+	checkBox.Parent = checkFrame
+	
+	local checkCorner = Instance.new("UICorner")
+	checkCorner.CornerRadius = UDim.new(0, 4)
+	checkCorner.Parent = checkBox
+	
+	local checkMark = Instance.new("TextLabel")
+	checkMark.Size = UDim2.new(1, 0, 1, 0)
+	checkMark.BackgroundTransparency = 1
+	checkMark.Text = "✓"
+	checkMark.TextColor3 = colors.success
+	checkMark.TextSize = 14
+	checkMark.Visible = false
+	checkMark.Parent = checkBox
+	
+	local checkText = Instance.new("TextLabel")
+	checkText.Size = UDim2.new(1, -25, 1, 0)
+	checkText.Position = UDim2.new(0, 25, 0, 0)
+	checkText.BackgroundTransparency = 1
+	checkText.Text = "Don't ask again"
+	checkText.TextColor3 = colors.text
+	checkText.TextSize = 13
+	checkText.TextXAlignment = Enum.TextXAlignment.Left
+	checkText.Font = Enum.Font.Gotham
+	checkText.Parent = checkFrame
+	
+	local isChecked = false
+	checkBox.MouseButton1Click:Connect(function()
+		isChecked = not isChecked
+		checkMark.Visible = isChecked
+	end)
+	
+	local btnFrame = Instance.new("Frame")
+	btnFrame.Size = UDim2.new(1, -20, 0, 40)
+	btnFrame.Position = UDim2.new(0, 10, 1, -45)
+	btnFrame.BackgroundTransparency = 1
+	btnFrame.Parent = frame
+	
+	local loadBtn = Instance.new("TextButton")
+	loadBtn.Size = UDim2.new(0.45, -5, 1, 0)
+	loadBtn.Position = UDim2.new(0, 0, 0, 0)
+	loadBtn.BackgroundColor3 = colors.success
+	loadBtn.Text = "LOAD"
+	loadBtn.TextColor3 = colors.text
+	loadBtn.TextSize = 13
+	loadBtn.Font = Enum.Font.GothamBold
+	loadBtn.Parent = btnFrame
+	
+	local loadCorner = Instance.new("UICorner")
+	loadCorner.CornerRadius = UDim.new(0, 8)
+	loadCorner.Parent = loadBtn
+	
+	local newBtn = Instance.new("TextButton")
+	newBtn.Size = UDim2.new(0.45, -5, 1, 0)
+	newBtn.Position = UDim2.new(0.55, 0, 0, 0)
+	newBtn.BackgroundColor3 = colors.medium
+	newBtn.Text = "NEW"
+	newBtn.TextColor3 = colors.text
+	newBtn.TextSize = 13
+	newBtn.Font = Enum.Font.GothamBold
+	newBtn.Parent = btnFrame
+	
+	local newCorner = Instance.new("UICorner")
+	newCorner.CornerRadius = UDim.new(0, 8)
+	newCorner.Parent = newBtn
+	
+	loadBtn.MouseButton1Click:Connect(function()
+		setDontAsk(isChecked)
+		dialogGui:Destroy()
+		createMainGUI(saved.objectName, saved.mode, saved.speed, saved.walkSpeed)
+	end)
+	
+	newBtn.MouseButton1Click:Connect(function()
+		setDontAsk(isChecked)
+		dialogGui:Destroy()
+		createMainGUI()
+	end)
+	
+elseif saved and dontAsk then
+	createMainGUI(saved.objectName, saved.mode, saved.speed, saved.walkSpeed)
+else
+	createMainGUI()
+end
+
+player.CharacterAdded:Connect(function(newChar)
+	stopMoving()
+	character = newChar
+end)

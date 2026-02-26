@@ -181,12 +181,12 @@ local function createButton(name, scriptPath, icon, order)
 end
 
 -- Иконки для разных типов скриптов
-local icons = {"🚀", "⚡", "🔫", "💰", "🎮", "⚙️", "📦", "🔧", "💎", "🌟"}
+local icons = {"🚀", "⚡", "🔫", "💰", "🎮", "⚙️", "📦", "🔧", "💎", "🎯"}
 
 -- Создаем 10 кнопок с разными названиями и иконками
 local scripts = {
     {name = "tp + auto tp", path = "https://raw.githubusercontent.com/3lamkir/A/refs/heads/main/tp", icon = "🌍"},
-    {name = "tp", path = "https://raw.githubusercontent.com/3lamkir/A/refs/heads/main/tp", icon = "⭐"},
+    {name = "Object Mover", path = "https://raw.githubusercontent.com/3lamkir/A/refs/heads/main/Object_Mover", icon = "🎯"},
 }
 
 for i, script in ipairs(scripts) do

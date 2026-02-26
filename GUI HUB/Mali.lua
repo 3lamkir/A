@@ -185,9 +185,9 @@ local icons = {"🚀", "⚡", "🔫", "💰", "🎮", "⚙️", "📦", "🔧", 
 
 -- Создаем 10 кнопок с разными названиями и иконками
 local scripts = {
-    {name = tp + auto tp", path = "https://raw.githubusercontent.com/3lamkir/A/refs/heads/main/tp", icon = "🌍"},
-    {name = "-", path = "", icon = "⭐"},
-    }
+    {name = "tp + auto tp", path = "https://raw.githubusercontent.com/3lamkir/A/refs/heads/main/tp", icon = "🌍"},
+    {name = "tp", path = "https://raw.githubusercontent.com/3lamkir/A/refs/heads/main/tp", icon = "⭐"},
+}
 
 for i, script in ipairs(scripts) do
     createButton(script.name, script.path, script.icon, i)

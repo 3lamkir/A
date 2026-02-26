@@ -185,7 +185,7 @@ local icons = {"🚀", "⚡", "🔫", "💰", "🎮", "⚙️", "📦", "🔧", 
 
 -- Создаем 10 кнопок с разными названиями и иконками
 local scripts = {
-    {name = "Телепорт v1", path = "https://raw.githubusercontent.com/3lamkir/A/refs/heads/main/tp", icon = "🌍"},
+    {name = tp + auto tp", path = "https://raw.githubusercontent.com/3lamkir/A/refs/heads/main/tp", icon = "🌍"},
     {name = "-", path = "", icon = "⭐"},
     }
 

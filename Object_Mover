@@ -99,6 +99,7 @@ local function getTargetPart(object)
 end
 
 local function findNextObject(objectName)
+	if not objectName or objectName == "" then return nil end
 	local parts = workspace:GetDescendants()
 	for _, part in ipairs(parts) do
 		if part.Name == objectName and part:IsA("BasePart") and part ~= currentTarget then
@@ -165,17 +166,25 @@ local function stopMoving()
 	end
 	
 	local char = player.Character
-	if char and char:FindFirstChild("Humanoid") then
-		char.Humanoid:MoveTo(Vector3.new(0,0,0))
+	if char and char:FindFirstChild("Humanoid") and char:FindFirstChild("HumanoidRootPart") then
+		local humanoid = char.Humanoid
+		local rootPart = char.HumanoidRootPart
+		humanoid:MoveTo(rootPart.Position)
 	end
 	
 	isMoving = false
+	currentTarget = nil
 	removeTargetMarker()
 	print("Movement stopped")
 end
 
 local function teleportToObject(objectName)
 	stopMoving()
+	
+	if not objectName or objectName == "" then
+		print("No object name provided")
+		return false
+	end
 	
 	local found = workspace:FindFirstChild(objectName, true)
 	if not found then
@@ -209,6 +218,11 @@ end
 local function walkToObject(objectName)
 	stopMoving()
 	
+	if not objectName or objectName == "" then
+		print("No object name provided")
+		return false
+	end
+	
 	local found = workspace:FindFirstChild(objectName, true)
 	if not found then
 		print("Object not found:", objectName)
@@ -239,13 +253,23 @@ local function walkToObject(objectName)
 	humanoid:MoveTo(targetPos)
 	
 	currentWalkConnection = RunService.Heartbeat:Connect(function()
-		if not char or not char.Parent then
+		if not isMoving or not char or not char.Parent then
 			stopMoving()
 			return
 		end
 		
 		if not targetPart or not targetPart.Parent then
-			stopMoving()
+			local newTarget = findNextObject(objectName)
+			if newTarget then
+				targetPart = newTarget
+				currentTarget = newTarget
+				updateTargetMarker(targetPart.Position + Vector3.new(0, 3, 0))
+				targetPos = targetPart.Position + Vector3.new(0, MIN_DISTANCE, 0)
+				humanoid:MoveTo(targetPos)
+			else
+				stopMoving()
+				print("No more objects found:", objectName)
+			end
 			return
 		end
 		
@@ -256,8 +280,17 @@ local function walkToObject(objectName)
 		
 		if distance < MIN_DISTANCE + 0.5 then
 			hrp.CFrame = CFrame.new(targetPos)
-			stopMoving()
-			print("Reached:", targetPart.Name)
+			local newTarget = findNextObject(objectName)
+			if newTarget then
+				targetPart = newTarget
+				currentTarget = newTarget
+				updateTargetMarker(targetPart.Position + Vector3.new(0, 3, 0))
+				targetPos = targetPart.Position + Vector3.new(0, MIN_DISTANCE, 0)
+				humanoid:MoveTo(targetPos)
+			else
+				stopMoving()
+				print("All objects collected:", objectName)
+			end
 		end
 		
 		updateTargetMarker(targetPart.Position + Vector3.new(0, 3, 0))
@@ -268,8 +301,14 @@ local function walkToObject(objectName)
 	return true
 end
 
+-- ИСПРАВЛЕННАЯ ФУНКЦИЯ TWEEN
 local function tweenToObject(objectName)
 	stopMoving()
+	
+	if not objectName or objectName == "" then
+		print("No object name provided")
+		return false
+	end
 	
 	local found = workspace:FindFirstChild(objectName, true)
 	if not found then
@@ -293,6 +332,10 @@ local function tweenToObject(objectName)
 	updateTargetMarker(targetPart.Position + Vector3.new(0, 3, 0))
 	
 	local function startTweenToTarget()
+		if not isMoving then
+			return false
+		end
+		
 		if not currentTarget or not currentTarget.Parent then
 			local newTarget = findNextObject(objectName)
 			if newTarget then
@@ -300,6 +343,7 @@ local function tweenToObject(objectName)
 				updateTargetMarker(currentTarget.Position + Vector3.new(0, 3, 0))
 			else
 				stopMoving()
+				print("No more objects found:", objectName)
 				return false
 			end
 		end
@@ -310,16 +354,16 @@ local function tweenToObject(objectName)
 		local distance = (hrp.Position - targetPos).Magnitude
 		
 		if distance < MIN_DISTANCE + 0.5 then
-			task.spawn(function()
-				local newTarget = findNextObject(objectName)
-				if newTarget then
-					currentTarget = newTarget
-					updateTargetMarker(currentTarget.Position + Vector3.new(0, 3, 0))
-					startTweenToTarget()
-				else
-					stopMoving()
-				end
-			end)
+			hrp.CFrame = CFrame.new(targetPos)
+			local newTarget = findNextObject(objectName)
+			if newTarget then
+				currentTarget = newTarget
+				updateTargetMarker(currentTarget.Position + Vector3.new(0, 3, 0))
+				startTweenToTarget()
+			else
+				stopMoving()
+				print("All objects collected:", objectName)
+			end
 			return true
 		end
 		
@@ -338,6 +382,8 @@ local function tweenToObject(objectName)
 		currentTween = TweenService:Create(hrp, tweenInfo, goal)
 		
 		currentTween.Completed:Connect(function()
+			if not isMoving then return end
+			
 			hrp.CFrame = CFrame.new(targetPos)
 			
 			local newTarget = findNextObject(objectName)
@@ -346,9 +392,7 @@ local function tweenToObject(objectName)
 				updateTargetMarker(currentTarget.Position + Vector3.new(0, 3, 0))
 				startTweenToTarget()
 			else
-				currentTween = nil
-				isMoving = false
-				removeTargetMarker()
+				stopMoving()
 				print("All objects collected:", objectName)
 			end
 		end)

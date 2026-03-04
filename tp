@@ -273,7 +273,7 @@ Instance.new("UICorner", speedBox).CornerRadius = UDim.new(0,6)
 speedBox.FocusLost:Connect(function()
 	local val = tonumber(speedBox.Text:match("[%-]?%d+%.?%d*"))
 	if val then
-		interval = math.max(100, math.min(10000, val))
+		interval = math.max(1, math.min(10000, val))
 		speedBox.Text = tostring(math.floor(interval))
 	end
 end)

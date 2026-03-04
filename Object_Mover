@@ -1,4 +1,4 @@
-by: @kirill_p6 on Telegram/Discord
+--by: @kirill_p6 on Telegram/Discord
 local TweenService = game:GetService("TweenService")
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")

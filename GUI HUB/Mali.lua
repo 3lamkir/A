@@ -11,7 +11,7 @@ local UICorner = Instance.new("UICorner")
 local Shadow = Instance.new("ImageLabel")
 
 ScreenGui.Parent = game.CoreGui
-ScreenGui.Name = "AI HAB"
+ScreenGui.Name = "AI HUB"
 ScreenGui.ResetOnSpawn = false
 
 MainFrame.Parent = ScreenGui

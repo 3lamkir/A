@@ -1,4 +1,4 @@
--- [[ LOADER ]]
+-- by: @kirill_p6 on Telegram/Discord
 local player = game:GetService("Players").LocalPlayer
 local screenGui = Instance.new("ScreenGui")
 screenGui.Parent = player:WaitForChild("PlayerGui")

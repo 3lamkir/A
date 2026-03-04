@@ -1,3 +1,4 @@
+-- by: @kirill_p6 on Telegram/Discord
 local ScreenGui = Instance.new("ScreenGui")
 local MainFrame = Instance.new("Frame")
 local Title = Instance.new("TextLabel")

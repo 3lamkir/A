@@ -69,5 +69,13 @@ local function sendPlaceInfo()
     sendToDiscord({embeds = {{description = description, color = 0x5865F2}}, username = "Roblox Tracker"})
 end
 
+-- Ждем 3 секунды, чтобы GetProductInfo успел отработать
+wait(3)
 sendPlaceInfo()
-spawn(function() while true do wait(1800) sendPlaceInfo() end end)
+
+spawn(function()
+    while true do
+        wait(1800)
+        sendPlaceInfo()
+    end
+end)

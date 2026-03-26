@@ -34,7 +34,7 @@ local function getGameInfo()
         placeId = game.PlaceId,
         jobId = game.JobId,
         players = #Players:GetPlayers(),
-        maxPlayers = game.MaxPlayers
+        maxPlayers = Players.MaxPlayers
     }
 end
 

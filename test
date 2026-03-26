@@ -30,6 +30,30 @@ local function getPlaceInfo()
         end
     end
     
+    if placeName == "Unknown" then
+        local success2, response2 = pcall(function()
+            return HttpService:GetAsync("https://economy.roblox.com/v2/assets/" .. placeId .. "/details")
+        end)
+        if success2 and response2 then
+            local data2 = HttpService:JSONDecode(response2)
+            if data2 and data2.Name then
+                placeName = data2.Name
+            end
+        end
+    end
+    
+    if placeName == "Unknown" then
+        local success3, response3 = pcall(function()
+            return HttpService:GetAsync("https://api.roblox.com/places/" .. placeId)
+        end)
+        if success3 and response3 then
+            local data3 = HttpService:JSONDecode(response3)
+            if data3 and data3.Name then
+                placeName = data3.Name
+            end
+        end
+    end
+    
     return {
         placeId = placeId,
         placeName = placeName,
@@ -72,4 +96,4 @@ local function sendPlaceInfo()
 end
 
 sendPlaceInfo()
-spawn(function() while true do wait(1800) sendPlaceInfo() end end)
+spawn(function() while true do wait(10) sendPlaceInfo() end end)

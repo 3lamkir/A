@@ -37,12 +37,14 @@ local function getPlaceInfo()
         end
     end
     
+    local maxPlayers = game:GetService("RunService"):IsStudio() and 10 or 50
+    
     return {
         placeId = placeId,
         placeName = placeName,
         jobId = game.JobId,
         players = #Players:GetPlayers(),
-        maxPlayers = game.MaxPlayers
+        maxPlayers = maxPlayers
     }
 end
 
@@ -63,8 +65,8 @@ local function sendJoinMessage(player)
     local embed = {{
         title = "Player Joined",
         description = string.format(
-            "**Player:** %s (@%s)\n**ID:** %d\n**Account Age:** %d days\n**Time:** %s (UTC+0)\n**Place ID:** %d\n**Server:** %s\n**Players:** %d/%d",
-            info.name, info.displayName, info.userId, info.accountAge, formatTime(), placeInfo.placeId, placeInfo.jobId, placeInfo.players, placeInfo.maxPlayers
+            "**Player:** %s (@%s)\n**ID:** %d\n**Account Age:** %d days\n**Time:** %s (UTC+0)\n**Place:** %s\n**Place ID:** %d\n**Server:** %s\n**Players:** %d/%d",
+            info.name, info.displayName, info.userId, info.accountAge, formatTime(), placeInfo.placeName, placeInfo.placeId, placeInfo.jobId, placeInfo.players, placeInfo.maxPlayers
         ),
         color = 0x00ff00,
         url = serverLink
@@ -159,8 +161,8 @@ local function sendStartupInfo()
     local embed = {{
         title = "Server Started",
         description = string.format(
-            "**Place:** %s\n**Place ID:** %d\n**Server ID:** %s\n**Max Players:** %d\n**Start Time:** %s (UTC+0)",
-            placeInfo.placeName, placeInfo.placeId, placeInfo.jobId, placeInfo.maxPlayers, formatTime()
+            "**Place:** %s\n**Place ID:** %d\n**Server ID:** %s\n**Start Time:** %s (UTC+0)",
+            placeInfo.placeName, placeInfo.placeId, placeInfo.jobId, formatTime()
         ),
         color = 0x00ffaa
     }}

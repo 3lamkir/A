@@ -45,13 +45,16 @@ local function sendToDiscord(embeds)
     end)
 end
 
+-- ИСПРАВЛЕНО: конвертация пинга из строки в число
 local function getGameInfo()
+    local pingValue = game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValueString()
+    local ping = tonumber(pingValue) or 0
     return {
         name = game.Name,
         placeId = game.PlaceId,
         jobId = game.JobId,
         players = #Players:GetPlayers(),
-        ping = math.floor(game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValueString())
+        ping = math.floor(ping)
     }
 end
 
@@ -65,7 +68,7 @@ local function getPlayerList()
     return result
 end
 
--- Запуск (мгновенно)
+-- Запуск
 local function sendStartupInfo()
     local gameInfo = getGameInfo()
     local serverLink = "https://www.roblox.com/games/" .. gameInfo.placeId .. "?server=" .. gameInfo.jobId
@@ -103,7 +106,7 @@ local function sendLeaveMessage()
     sendToDiscord({embed})
 end
 
--- Периодическое обновление
+-- Обновление
 local function sendServerUpdate()
     local gameInfo = getGameInfo()
     local embed = {
@@ -121,7 +124,6 @@ local function sendServerUpdate()
 end
 
 -- Запуск
-local startTime = os.time()
 sendStartupInfo()
 
 game:BindToClose(function()

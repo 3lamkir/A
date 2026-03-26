@@ -1,18 +1,9 @@
--- Основной скрипт с Discord функционалом (чистый информационный формат)
+-- Discord Tracker (только владелец скрипта)
 local webhook = g
-
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
+local LocalPlayer = Players.LocalPlayer
 
--- Конфигурация
-local config = {
-    sendJoins = true,
-    sendLeaves = true,
-    sendGameInfo = true,
-    botName = "Roblox Tracker"
-}
-
--- Отправка в Discord
 local function sendToDiscord(data)
     local headers = {["Content-Type"] = "application/json"}
     local body = HttpService:JSONEncode(data)
@@ -21,169 +12,97 @@ local function sendToDiscord(data)
     end)
 end
 
--- Форматирование времени (UTC+0)
 local function formatTime()
     local t = os.date("!*t", os.time())
     return string.format("%02d:%02d:%02d %02d.%02d.%04d", t.hour, t.min, t.sec, t.day, t.month, t.year)
 end
 
--- Получение информации об игре
 local function getGameInfo()
     return {
         name = game.Name,
         placeId = game.PlaceId,
         jobId = game.JobId,
-        players = #Players:GetPlayers(),
-        maxPlayers = Players.MaxPlayers
+        players = #Players:GetPlayers()
     }
 end
 
--- Получение информации об игроке
-local function getPlayerInfo(player)
-    return {
-        name = player.Name,
-        displayName = player.DisplayName,
-        userId = player.UserId,
-        accountAge = math.floor((os.time() - player.AccountAge) / 86400)
-    }
+-- Информация о сервере при запуске (со ссылкой)
+local function sendStartupInfo()
+    wait(3)
+    local gameInfo = getGameInfo()
+    local players = Players:GetPlayers()
+    local playerNames = {}
+    for _, p in ipairs(players) do
+        table.insert(playerNames, p.Name)
+    end
+    local serverLink = "https://www.roblox.com/games/" .. gameInfo.placeId .. "?server=" .. gameInfo.jobId
+
+    local embed = {{
+        title = "🟢 **Сервер запущен**",
+        description = string.format(
+            "**🎮 Игра:** `%s`\n**🆔 Place ID:** `%d`\n**🔗 Server ID:** `%s`\n**👥 Игроков:** `%d`\n\n**🌍 Ссылка на сервер:** [Нажми чтобы зайти](%s)\n\n**📋 Список игроков:**\n`%s`\n\n**⏱ Время:** `%s` (UTC+0)",
+            gameInfo.name, gameInfo.placeId, gameInfo.jobId, gameInfo.players, serverLink, table.concat(playerNames, ", "), formatTime()
+        ),
+        color = 0x44ff44
+    }}
+
+    sendToDiscord({embeds = embed, username = "Roblox Tracker"})
 end
 
--- Отправка информации о входе игрока
-local function sendJoinMessage(player)
-    local info = getPlayerInfo(player)
+-- Отправка когда владелец вышел
+local function sendLeaveMessage()
     local gameInfo = getGameInfo()
     local serverLink = "https://www.roblox.com/games/" .. gameInfo.placeId .. "?server=" .. gameInfo.jobId
-    
+
     local embed = {{
-        title = "Новый игрок",
+        title = "🚪 **Вышел из сервера**",
         description = string.format(
-            "**Игрок:** %s (@%s)\n**ID:** %d\n**Возраст аккаунта:** %d дней\n**Время:** %s (UTC+0)\n**Сервер:** %s\n**Игроков:** %d/%d",
-            info.name, info.displayName, info.userId, info.accountAge, formatTime(), gameInfo.jobId, gameInfo.players, gameInfo.maxPlayers
+            "**Игрок:** `%s` (@%s)\n**ID:** `%d`\n**Время выхода:** `%s` (UTC+0)\n\n**🔗 Ссылка на сервер:** [Нажми чтобы зайти](%s)\n\n**📊 Сервер:** `%s`\n**Игроков осталось:** `%d`\n**Place ID:** `%d`",
+            LocalPlayer.Name, LocalPlayer.DisplayName, LocalPlayer.UserId, formatTime(), serverLink, gameInfo.name, gameInfo.players - 1, gameInfo.placeId
         ),
-        color = 0x00ff00,
-        url = serverLink
+        color = 0xff4444
     }}
-    
-    sendToDiscord({embeds = embed, username = config.botName})
+
+    sendToDiscord({embeds = embed, username = "Roblox Tracker"})
 end
 
--- Отправка информации о выходе игрока
-local function sendLeaveMessage(player)
-    local info = getPlayerInfo(player)
-    local gameInfo = getGameInfo()
-    
-    local embed = {{
-        title = "Игрок вышел",
-        description = string.format(
-            "**Игрок:** %s (@%s)\n**ID:** %d\n**Время:** %s (UTC+0)\n**Осталось игроков:** %d",
-            info.name, info.displayName, info.userId, formatTime(), gameInfo.players - 1
-        ),
-        color = 0xff0000
-    }}
-    
-    sendToDiscord({embeds = embed, username = config.botName})
-end
-
--- Отправка информации о сервере
+-- Периодическая информация
 local function sendServerInfo()
     local gameInfo = getGameInfo()
     local players = Players:GetPlayers()
     local playerList = {}
-    
     for i, p in ipairs(players) do
-        table.insert(playerList, string.format("%d. %s (%s) [%d]", i, p.Name, p.DisplayName, p.UserId))
+        table.insert(playerList, string.format("%d. %s", i, p.Name))
     end
-    
+    local serverLink = "https://www.roblox.com/games/" .. gameInfo.placeId .. "?server=" .. gameInfo.jobId
+
     local embed = {{
-        title = "Информация о сервере",
+        title = "📡 **Информация о сервере**",
         description = string.format(
-            "**Игра:** %s\n**Place ID:** %d\n**Server ID:** %s\n**Игроков:** %d/%d\n\n**Список игроков:**\n%s",
-            gameInfo.name, gameInfo.placeId, gameInfo.jobId, gameInfo.players, gameInfo.maxPlayers,
-            #playerList > 0 and table.concat(playerList, "\n") or "Нет игроков"
+            "**🎮 Игра:** `%s`\n**🆔 Place ID:** `%d`\n**👥 Игроков:** `%d`\n\n**🌍 Ссылка:** [Нажми](%s)\n\n**📋 Список игроков:**\n`%s`",
+            gameInfo.name, gameInfo.placeId, gameInfo.players, serverLink, table.concat(playerList, ", ")
         ),
-        color = 0x0099ff
+        color = 0x3399ff
     }}
-    
-    sendToDiscord({embeds = embed, username = config.botName})
+
+    sendToDiscord({embeds = embed, username = "Roblox Tracker"})
 end
 
--- Отслеживание убийств (через Humanoid)
-local function setupKillTracking()
-    local function onCharacterAdded(player, character)
-        local humanoid = character:WaitForChild("Humanoid")
-        humanoid.Died:Connect(function()
-            local killer = humanoid:FindFirstChild("creator")
-            if killer and killer.Value and killer.Value ~= player then
-                local killerInfo = getPlayerInfo(killer.Value)
-                local victimInfo = getPlayerInfo(player)
-                
-                local embed = {{
-                    title = "Убийство",
-                    description = string.format(
-                        "**Убийца:** %s (@%s) [%d]\n**Жертва:** %s (@%s) [%d]\n**Время:** %s (UTC+0)",
-                        killerInfo.name, killerInfo.displayName, killerInfo.userId,
-                        victimInfo.name, victimInfo.displayName, victimInfo.userId,
-                        formatTime()
-                    ),
-                    color = 0xff6600
-                }}
-                
-                sendToDiscord({embeds = embed, username = config.botName})
-            end
-        end)
-    end
-    
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player.Character then
-            onCharacterAdded(player, player.Character)
-        end
-        player.CharacterAdded:Connect(function(character)
-            onCharacterAdded(player, character)
-        end)
-    end
-    
-    Players.PlayerAdded:Connect(function(player)
-        player.CharacterAdded:Connect(function(character)
-            onCharacterAdded(player, character)
-        end)
-    end)
-end
-
--- Информация при запуске
-local function sendStartupInfo()
-    wait(5)
-    local gameInfo = getGameInfo()
-    
-    local embed = {{
-        title = "Сервер запущен",
-        description = string.format(
-            "**Игра:** %s\n**Place ID:** %d\n**Server ID:** %s\n**Макс игроков:** %d\n**Время запуска:** %s (UTC+0)",
-            gameInfo.name, gameInfo.placeId, gameInfo.jobId, gameInfo.maxPlayers, formatTime()
-        ),
-        color = 0x00ffaa
-    }}
-    
-    sendToDiscord({embeds = embed, username = config.botName})
-end
-
--- Инициализация
+-- Запуск
 local function init()
-    print("[Discord Tracker] Загружен")
+    print("[Discord Tracker] Загружен | Отслеживается: " .. LocalPlayer.Name)
     
-    if config.sendJoins then
-        Players.PlayerAdded:Connect(sendJoinMessage)
-        Players.PlayerRemoving:Connect(sendLeaveMessage)
-    end
-    
-    setupKillTracking()
     sendStartupInfo()
+    
+    game:BindToClose(function()
+        sendLeaveMessage()
+        wait(1)
+    end)
     
     spawn(function()
         while true do
             wait(1800)
-            if config.sendGameInfo then
-                sendServerInfo()
-            end
+            sendServerInfo()
         end
     end)
 end

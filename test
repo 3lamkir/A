@@ -1,155 +1,192 @@
--- Discord Tracker (Полная рабочая версия)
 local webhook = g
+
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
-local LocalPlayer = Players.LocalPlayer
 
--- Время
-local function getTime()
-    local t = os.date("*t")
-    return string.format("%02d:%02d:%02d", t.hour, t.min, t.sec)
-end
+local config = {
+    sendJoins = true,
+    sendLeaves = true,
+    sendGameInfo = true,
+    botName = "Roblox Tracker"
+}
 
-local function getDate()
-    local t = os.date("*t")
-    return string.format("%02d.%02d.%04d", t.day, t.month, t.year)
-end
-
--- Отправка в Discord
-local function sendEmbed(title, description, color)
-    local embed = {
-        title = title,
-        description = description,
-        color = color,
-        footer = {text = getTime() .. " | " .. getDate()},
-        timestamp = os.date("!%Y-%m-%dT%H:%M:%S.000Z")
-    }
-    local data = {
-        embeds = {embed},
-        username = "🎮 Roblox Tracker"
-    }
+local function sendToDiscord(data)
+    local headers = {["Content-Type"] = "application/json"}
+    local body = HttpService:JSONEncode(data)
     pcall(function()
-        request({
-            Url = webhook,
-            Method = "POST",
-            Headers = {["Content-Type"] = "application/json"},
-            Body = HttpService:JSONEncode(data)
-        })
+        request({Url = webhook, Method = "POST", Headers = headers, Body = body})
     end)
 end
 
--- Информация об игре
-local function getGameInfo()
-    local pingStr = game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValueString()
-    local ping = tonumber(pingStr) or 0
+local function formatTime()
+    local t = os.date("!*t", os.time())
+    return string.format("%02d:%02d:%02d %02d.%02d.%04d", t.hour, t.min, t.sec, t.day, t.month, t.year)
+end
+
+local function getPlaceInfo()
+    local placeId = game.PlaceId
+    local success, response = pcall(function()
+        return HttpService:GetAsync("https://games.roblox.com/v1/games?universeIds=" .. placeId)
+    end)
+    
+    local placeName = "Unknown"
+    if success and response then
+        local data = HttpService:JSONDecode(response)
+        if data and data.data and data.data[1] then
+            placeName = data.data[1].name or "Unknown"
+        end
+    end
+    
     return {
-        name = game.Name,
-        placeId = game.PlaceId,
+        placeId = placeId,
+        placeName = placeName,
         jobId = game.JobId,
         players = #Players:GetPlayers(),
-        ping = math.floor(ping),
-        maxPlayers = Players.MaxPlayers
+        maxPlayers = game.MaxPlayers
     }
 end
 
--- Список игроков
-local function getPlayerNames()
-    local names = {}
-    for _, p in pairs(Players:GetPlayers()) do
-        if p == LocalPlayer then
-            table.insert(names, "👑 " .. p.Name .. " (Вы)")
-        else
-            table.insert(names, "👤 " .. p.Name)
+local function getPlayerInfo(player)
+    return {
+        name = player.Name,
+        displayName = player.DisplayName,
+        userId = player.UserId,
+        accountAge = math.floor((os.time() - player.AccountAge) / 86400)
+    }
+end
+
+local function sendJoinMessage(player)
+    local info = getPlayerInfo(player)
+    local placeInfo = getPlaceInfo()
+    local serverLink = "https://www.roblox.com/games/" .. placeInfo.placeId .. "?server=" .. placeInfo.jobId
+    
+    local embed = {{
+        title = "Player Joined",
+        description = string.format(
+            "**Player:** %s (@%s)\n**ID:** %d\n**Account Age:** %d days\n**Time:** %s (UTC+0)\n**Place ID:** %d\n**Server:** %s\n**Players:** %d/%d",
+            info.name, info.displayName, info.userId, info.accountAge, formatTime(), placeInfo.placeId, placeInfo.jobId, placeInfo.players, placeInfo.maxPlayers
+        ),
+        color = 0x00ff00,
+        url = serverLink
+    }}
+    
+    sendToDiscord({embeds = embed, username = config.botName})
+end
+
+local function sendLeaveMessage(player)
+    local info = getPlayerInfo(player)
+    local placeInfo = getPlaceInfo()
+    
+    local embed = {{
+        title = "Player Left",
+        description = string.format(
+            "**Player:** %s (@%s)\n**ID:** %d\n**Time:** %s (UTC+0)\n**Players remaining:** %d",
+            info.name, info.displayName, info.userId, formatTime(), placeInfo.players - 1
+        ),
+        color = 0xff0000
+    }}
+    
+    sendToDiscord({embeds = embed, username = config.botName})
+end
+
+local function sendPlaceInfo()
+    local placeInfo = getPlaceInfo()
+    local players = Players:GetPlayers()
+    local playerList = {}
+    
+    for i, p in ipairs(players) do
+        table.insert(playerList, string.format("%d. %s (%s) [%d]", i, p.Name, p.DisplayName, p.UserId))
+    end
+    
+    local embed = {{
+        title = "Place Information",
+        description = string.format(
+            "**Name:** %s\n**Place ID:** %d\n**Server ID:** %s\n**Players:** %d/%d\n\n**Player List:**\n%s",
+            placeInfo.placeName, placeInfo.placeId, placeInfo.jobId, placeInfo.players, placeInfo.maxPlayers,
+            #playerList > 0 and table.concat(playerList, "\n") or "No players"
+        ),
+        color = 0x0099ff
+    }}
+    
+    sendToDiscord({embeds = embed, username = config.botName})
+end
+
+local function setupKillTracking()
+    local function onCharacterAdded(player, character)
+        local humanoid = character:WaitForChild("Humanoid")
+        humanoid.Died:Connect(function()
+            local killer = humanoid:FindFirstChild("creator")
+            if killer and killer.Value and killer.Value ~= player then
+                local killerInfo = getPlayerInfo(killer.Value)
+                local victimInfo = getPlayerInfo(player)
+                
+                local embed = {{
+                    title = "Kill",
+                    description = string.format(
+                        "**Killer:** %s (@%s) [%d]\n**Victim:** %s (@%s) [%d]\n**Time:** %s (UTC+0)",
+                        killerInfo.name, killerInfo.displayName, killerInfo.userId,
+                        victimInfo.name, victimInfo.displayName, victimInfo.userId,
+                        formatTime()
+                    ),
+                    color = 0xff6600
+                }}
+                
+                sendToDiscord({embeds = embed, username = config.botName})
+            end
+        end)
+    end
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player.Character then
+            onCharacterAdded(player, player.Character)
         end
+        player.CharacterAdded:Connect(function(character)
+            onCharacterAdded(player, character)
+        end)
     end
-    table.sort(names)
-    return table.concat(names, "\n")
+    
+    Players.PlayerAdded:Connect(function(player)
+        player.CharacterAdded:Connect(function(character)
+            onCharacterAdded(player, character)
+        end)
+    end)
 end
 
--- Запуск сервера
-local function sendStartup()
-    local info = getGameInfo()
-    local link = "https://www.roblox.com/games/" .. info.placeId .. "?server=" .. info.jobId
+local function sendStartupInfo()
+    wait(5)
+    local placeInfo = getPlaceInfo()
     
-    local desc = string.format([[
-**🎮 Игра:** %s
-**🆔 Place ID:** %d
-**🖥️ Server ID:** %s
-**👥 Игроков:** %d / %d
-**📶 Пинг:** %d ms
-
-**🔗 Ссылка:** [Нажми чтобы зайти](%s)
-
-**📋 Список игроков:**
-%s
-]], info.name, info.placeId, info.jobId, info.players, info.maxPlayers, info.ping, link, getPlayerNames())
+    local embed = {{
+        title = "Server Started",
+        description = string.format(
+            "**Place:** %s\n**Place ID:** %d\n**Server ID:** %s\n**Max Players:** %d\n**Start Time:** %s (UTC+0)",
+            placeInfo.placeName, placeInfo.placeId, placeInfo.jobId, placeInfo.maxPlayers, formatTime()
+        ),
+        color = 0x00ffaa
+    }}
     
-    sendEmbed("🟢 **СЕРВЕР ЗАПУЩЕН**", desc, 0x2ecc71)
+    sendToDiscord({embeds = embed, username = config.botName})
 end
 
--- Выход (отслеживаем через PlayerRemoving)
-local function sendLeave()
-    local info = getGameInfo()
-    local link = "https://www.roblox.com/games/" .. info.placeId .. "?server=" .. info.jobId
-    local playersLeft = info.players - 1
+local function init()
+    print("[Discord Tracker] Loaded")
     
-    local desc = string.format([[
-**👤 Игрок:** %s
-**🆔 ID:** %d
-**⏱ Время игры:** %s
-**👥 Осталось игроков:** %d
-
-**🔗 Ссылка:** [Вернуться](%s)
-]], LocalPlayer.Name, LocalPlayer.UserId, os.date("!%H:%M:%S", os.time() - startTime), playersLeft, link)
-    
-    sendEmbed("🔴 **ВЫХОД С СЕРВЕРА**", desc, 0xe74c3c)
-end
-
--- Отправка информации о сервере (1 раз через 2 секунды)
-local function sendServerInfo()
-    wait(2)
-    local info = getGameInfo()
-    local link = "https://www.roblox.com/games/" .. info.placeId .. "?server=" .. info.jobId
-    
-    local desc = string.format([[
-**🎮 Игра:** %s
-**👥 Игроков:** %d / %d
-**📶 Пинг:** %d ms
-
-**🔗 Ссылка:** [Нажми](%s)
-
-**📋 Онлайн:**
-%s
-]], info.name, info.players, info.maxPlayers, info.ping, link, getPlayerNames())
-    
-    sendEmbed("📡 **ИНФОРМАЦИЯ О СЕРВЕРЕ**", desc, 0x3498db)
-end
-
--- Запуск
-local startTime = os.time()
-
--- Отправляем информацию о запуске
-sendStartup()
-
--- Отправляем дополнительную информацию через 2 секунды
-spawn(function()
-    sendServerInfo()
-end)
-
--- Отслеживаем выход (без BindToClose)
-local player = LocalPlayer
-player:WaitForChild("Character")
-local humanoid = player.Character:WaitForChild("Humanoid")
-
-humanoid.Died:Connect(function()
-    sendLeave()
-end)
-
--- Также отслеживаем если игрок вышел через PlayerRemoving (на всякий случай)
-Players.PlayerRemoving:Connect(function(p)
-    if p == LocalPlayer then
-        sendLeave()
+    if config.sendJoins then
+        Players.PlayerAdded:Connect(sendJoinMessage)
+        Players.PlayerRemoving:Connect(sendLeaveMessage)
     end
-end)
+    
+    setupKillTracking()
+    sendStartupInfo()
+    
+    spawn(function()
+        while true do
+            wait(1800)
+            if config.sendGameInfo then
+                sendPlaceInfo()
+            end
+        end
+    end)
+end
 
-print("[Tracker] Загружен | " .. LocalPlayer.Name)
+init()

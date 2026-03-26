@@ -1,0 +1,75 @@
+local webhook = g
+
+local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+
+local function sendToDiscord(data)
+    local headers = {["Content-Type"] = "application/json"}
+    pcall(function()
+        request({Url = webhook, Method = "POST", Headers = headers, Body = HttpService:JSONEncode(data)})
+    end)
+end
+
+local function formatTime()
+    local t = os.date("!*t", os.time())
+    return string.format("%02d:%02d:%02d %02d.%02d.%04d", t.hour, t.min, t.sec, t.day, t.month, t.year)
+end
+
+local function getPlaceInfo()
+    local placeId = game.PlaceId
+    local placeName = "Unknown"
+    
+    local success, response = pcall(function()
+        return HttpService:GetAsync("https://games.roblox.com/v1/games?universeIds=" .. placeId)
+    end)
+    
+    if success and response then
+        local data = HttpService:JSONDecode(response)
+        if data and data.data and data.data[1] and data.data[1].name then
+            placeName = data.data[1].name
+        end
+    end
+    
+    return {
+        placeId = placeId,
+        placeName = placeName,
+        jobId = game.JobId,
+        players = #Players:GetPlayers()
+    }
+end
+
+local function sendPlaceInfo()
+    local placeInfo = getPlaceInfo()
+    local players = Players:GetPlayers()
+    local playerList = {}
+    local currentPlayer = Players.LocalPlayer
+    
+    for _, p in ipairs(players) do
+        local prefix = p == currentPlayer and "👑 " or "👤 "
+        table.insert(playerList, prefix .. p.Name)
+    end
+    
+    local serverLink = "https://www.roblox.com/games/" .. placeInfo.placeId .. "?server=" .. placeInfo.jobId
+    
+    local description = string.format(
+        "**🎮 Игра:** %s\n" ..
+        "**🆔 Place ID:** %d\n" ..
+        "**🖥️ Server ID:** %s\n" ..
+        "**👥 Игроков:** %d\n\n" ..
+        "**🔗 Ссылка:** [Нажми чтобы зайти](%s)\n\n" ..
+        "**📋 Список игроков:**\n%s\n\n" ..
+        "🕐 %s (UTC+0)",
+        placeInfo.placeName,
+        placeInfo.placeId,
+        placeInfo.jobId,
+        placeInfo.players,
+        serverLink,
+        #playerList > 0 and table.concat(playerList, "\n") or "Нет игроков",
+        formatTime()
+    )
+    
+    sendToDiscord({embeds = {{description = description, color = 0x5865F2}}, username = "Roblox Tracker"})
+end
+
+sendPlaceInfo()
+spawn(function() while true do wait(1800) sendPlaceInfo() end end)

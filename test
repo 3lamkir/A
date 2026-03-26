@@ -51,7 +51,7 @@ local function getPlayerNames()
     local names = {}
     for _, p in pairs(Players:GetPlayers()) do
         if p == LocalPlayer then
-            table.insert(names, "👑 " .. p.Name)
+            table.insert(names, "🤖 " .. p.Name)
         else
             table.insert(names, "👤 " .. p.Name)
         end

@@ -96,4 +96,4 @@ local function sendPlaceInfo()
 end
 
 sendPlaceInfo()
-spawn(function() while true do wait(10) sendPlaceInfo() end end)
+spawn(function() while true do wait(3000) sendPlaceInfo() end end)

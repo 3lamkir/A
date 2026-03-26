@@ -50,12 +50,12 @@ local function sendPlaceInfo()
     local serverLink = "https://www.roblox.com/games/" .. placeInfo.placeId .. "?server=" .. placeInfo.jobId
     
     local description = string.format(
-        "**🎮 Игра:** %s\n" ..
+        "**🎮 Game:** %s\n" ..
         "**🆔 Place ID:** %d\n" ..
         "**🖥️ Server ID:** %s\n" ..
-        "**👥 Игроков:** %d\n\n" ..
-        "**🔗 Ссылка:** [Нажми чтобы зайти](%s)\n\n" ..
-        "**📋 Список игроков:**\n%s\n\n" ..
+        "**👥 players:** %d\n\n" ..
+        "**🔗 link:** [Click to enter](%s)\n\n" ..
+        "**📋 List of players:**\n%s\n\n" ..
         "🕐 %s (UTC+0)",
         placeInfo.placeName,
         placeInfo.placeId,
@@ -69,7 +69,6 @@ local function sendPlaceInfo()
     sendToDiscord({embeds = {{description = description, color = 0x5865F2}}, username = "Roblox Tracker"})
 end
 
--- Ждем 3 секунды, чтобы GetProductInfo успел отработать
 wait(3)
 sendPlaceInfo()
 

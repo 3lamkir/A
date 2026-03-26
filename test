@@ -1,20 +1,48 @@
--- Discord Tracker (только владелец скрипта)
+-- Discord Tracker Pro (с авторегионом)
 local webhook = g
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
-local function sendToDiscord(data)
-    local headers = {["Content-Type"] = "application/json"}
-    local body = HttpService:JSONEncode(data)
-    pcall(function()
-        request({Url = webhook, Method = "POST", Headers = headers, Body = body})
-    end)
+-- Определение региона
+local region = {country = "Unknown", timezone = "UTC", utc_offset = "+00:00", country_code = "🌍"}
+
+pcall(function()
+    local response = game:HttpGet("https://ipapi.co/json/")
+    local data = HttpService:JSONDecode(response)
+    region.country = data.country_name or "Unknown"
+    region.country_code = data.country_code or "??"
+    region.city = data.city or "Unknown"
+    region.timezone = data.timezone or "UTC"
+    region.utc_offset = data.utc_offset or "+00:00"
+end)
+
+local function getFlagEmoji(code)
+    local flags = {RU="🇷🇺",US="🇺🇸",GB="🇬🇧",DE="🇩🇪",FR="🇫🇷",UA="🇺🇦",BY="🇧🇾",KZ="🇰🇿",PL="🇵🇱",NL="🇳🇱"}
+    return flags[code] or "🌍"
 end
 
-local function formatTime()
+local function formatLocalTime()
     local t = os.date("!*t", os.time())
-    return string.format("%02d:%02d:%02d %02d.%02d.%04d", t.hour, t.min, t.sec, t.day, t.month, t.year)
+    local offset = tonumber(region.utc_offset:match("[+-]%d+")) or 0
+    local hour = (t.hour + offset) % 24
+    return string.format("%02d:%02d:%02d %02d.%02d.%04d", hour, t.min, t.sec, t.day, t.month, t.year)
+end
+
+local function formatShortTime()
+    local t = os.date("!*t", os.time())
+    local offset = tonumber(region.utc_offset:match("[+-]%d+")) or 0
+    local hour = (t.hour + offset) % 24
+    return string.format("%02d:%02d:%02d", hour, t.min, t.sec)
+end
+
+-- Отправка
+local function sendToDiscord(embeds)
+    local data = {embeds = embeds, username = string.format("%s Roblox Tracker", getFlagEmoji(region.country_code))}
+    local headers = {["Content-Type"] = "application/json"}
+    pcall(function()
+        request({Url = webhook, Method = "POST", Headers = headers, Body = HttpService:JSONEncode(data)})
+    end)
 end
 
 local function getGameInfo()
@@ -22,89 +50,90 @@ local function getGameInfo()
         name = game.Name,
         placeId = game.PlaceId,
         jobId = game.JobId,
-        players = #Players:GetPlayers()
+        players = #Players:GetPlayers(),
+        ping = math.floor(game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValueString())
     }
 end
 
--- Информация о сервере при запуске (со ссылкой)
-local function sendStartupInfo()
-    wait(3)
-    local gameInfo = getGameInfo()
+local function getPlayerList()
     local players = Players:GetPlayers()
-    local playerNames = {}
+    local result = {}
     for _, p in ipairs(players) do
-        table.insert(playerNames, p.Name)
+        table.insert(result, (p == LocalPlayer and "👑 " or "👤 ") .. p.Name)
     end
-    local serverLink = "https://www.roblox.com/games/" .. gameInfo.placeId .. "?server=" .. gameInfo.jobId
-
-    local embed = {{
-        title = "🟢 **Сервер запущен**",
-        description = string.format(
-            "**🎮 Игра:** `%s`\n**🆔 Place ID:** `%d`\n**🔗 Server ID:** `%s`\n**👥 Игроков:** `%d`\n\n**🌍 Ссылка на сервер:** [Нажми чтобы зайти](%s)\n\n**📋 Список игроков:**\n`%s`\n\n**⏱ Время:** `%s` (UTC+0)",
-            gameInfo.name, gameInfo.placeId, gameInfo.jobId, gameInfo.players, serverLink, table.concat(playerNames, ", "), formatTime()
-        ),
-        color = 0x44ff44
-    }}
-
-    sendToDiscord({embeds = embed, username = "Roblox Tracker"})
+    table.sort(result)
+    return result
 end
 
--- Отправка когда владелец вышел
+-- Запуск (мгновенно)
+local function sendStartupInfo()
+    local gameInfo = getGameInfo()
+    local serverLink = "https://www.roblox.com/games/" .. gameInfo.placeId .. "?server=" .. gameInfo.jobId
+    
+    local embed = {
+        title = string.format("%s **СЕРВЕР ЗАПУЩЕН** %s", getFlagEmoji(region.country_code), getFlagEmoji(region.country_code)),
+        description = string.format(
+            "```\n🎮 %s\n🆔 %d\n🖥️ %s\n👥 %d игроков\n📶 %d ms\n📍 %s, %s\n```\n\n**🔗 Ссылка:** [Нажми чтобы зайти](%s)\n\n**📋 Игроки:**\n%s",
+            gameInfo.name, gameInfo.placeId, gameInfo.jobId, gameInfo.players, gameInfo.ping,
+            region.city, region.country,
+            serverLink, table.concat(getPlayerList(), "\n")
+        ),
+        color = 0x2ecc71,
+        footer = {text = string.format("🕐 %s (%s %s)", formatShortTime(), region.timezone, region.utc_offset)},
+        timestamp = os.date("!%Y-%m-%dT%H:%M:%S.000Z")
+    }
+    sendToDiscord({embed})
+end
+
+-- Выход
 local function sendLeaveMessage()
     local gameInfo = getGameInfo()
     local serverLink = "https://www.roblox.com/games/" .. gameInfo.placeId .. "?server=" .. gameInfo.jobId
-
-    local embed = {{
-        title = "🚪 **Вышел из сервера**",
+    
+    local embed = {
+        title = "❌ **ВЫХОД С СЕРВЕРА** ❌",
         description = string.format(
-            "**Игрок:** `%s` (@%s)\n**ID:** `%d`\n**Время выхода:** `%s` (UTC+0)\n\n**🔗 Ссылка на сервер:** [Нажми чтобы зайти](%s)\n\n**📊 Сервер:** `%s`\n**Игроков осталось:** `%d`\n**Place ID:** `%d`",
-            LocalPlayer.Name, LocalPlayer.DisplayName, LocalPlayer.UserId, formatTime(), serverLink, gameInfo.name, gameInfo.players - 1, gameInfo.placeId
+            "```\n👤 %s\n🆔 %d\n👥 Осталось: %d игроков\n📍 %s, %s\n```\n\n**🔗 Ссылка:** [Вернуться](%s)",
+            LocalPlayer.Name, LocalPlayer.UserId, gameInfo.players - 1, region.city, region.country, serverLink
         ),
-        color = 0xff4444
-    }}
-
-    sendToDiscord({embeds = embed, username = "Roblox Tracker"})
+        color = 0xe74c3c,
+        footer = {text = string.format("🕐 %s (%s)", formatShortTime(), region.timezone)},
+        timestamp = os.date("!%Y-%m-%dT%H:%M:%S.000Z")
+    }
+    sendToDiscord({embed})
 end
 
--- Периодическая информация
-local function sendServerInfo()
+-- Периодическое обновление
+local function sendServerUpdate()
     local gameInfo = getGameInfo()
-    local players = Players:GetPlayers()
-    local playerList = {}
-    for i, p in ipairs(players) do
-        table.insert(playerList, string.format("%d. %s", i, p.Name))
-    end
-    local serverLink = "https://www.roblox.com/games/" .. gameInfo.placeId .. "?server=" .. gameInfo.jobId
-
-    local embed = {{
-        title = "📡 **Информация о сервере**",
+    local embed = {
+        title = "📡 **СТАТУС СЕРВЕРА** 📡",
         description = string.format(
-            "**🎮 Игра:** `%s`\n**🆔 Place ID:** `%d`\n**👥 Игроков:** `%d`\n\n**🌍 Ссылка:** [Нажми](%s)\n\n**📋 Список игроков:**\n`%s`",
-            gameInfo.name, gameInfo.placeId, gameInfo.players, serverLink, table.concat(playerList, ", ")
+            "```\n🎮 %s\n👥 %d игроков\n📶 %d ms\n🆔 %s\n📍 %s, %s\n```\n\n**📋 Онлайн:**\n%s",
+            gameInfo.name, gameInfo.players, gameInfo.ping, gameInfo.jobId:sub(1, 12).."...",
+            region.city, region.country, table.concat(getPlayerList(), "\n")
         ),
-        color = 0x3399ff
-    }}
-
-    sendToDiscord({embeds = embed, username = "Roblox Tracker"})
+        color = 0x3498db,
+        footer = {text = string.format("🕐 %s | Обновление", formatShortTime())},
+        timestamp = os.date("!%Y-%m-%dT%H:%M:%S.000Z")
+    }
+    sendToDiscord({embed})
 end
 
 -- Запуск
-local function init()
-    print("[Discord Tracker] Загружен | Отслеживается: " .. LocalPlayer.Name)
-    
-    sendStartupInfo()
-    
-    game:BindToClose(function()
-        sendLeaveMessage()
-        wait(1)
-    end)
-    
-    spawn(function()
-        while true do
-            wait(1800)
-            sendServerInfo()
-        end
-    end)
-end
+local startTime = os.time()
+sendStartupInfo()
 
-init()
+game:BindToClose(function()
+    sendLeaveMessage()
+    wait(1)
+end)
+
+spawn(function()
+    while true do
+        wait(900)
+        sendServerUpdate()
+    end
+end)
+
+print("[Tracker] Загружен | Регион: " .. region.country .. " (" .. region.timezone .. ")")

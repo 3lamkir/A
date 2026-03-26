@@ -2,6 +2,7 @@ local webhook = g
 
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local function sendToDiscord(data)
     local headers = {["Content-Type"] = "application/json"}
@@ -19,39 +20,12 @@ local function getPlaceInfo()
     local placeId = game.PlaceId
     local placeName = "Unknown"
     
-    local success, response = pcall(function()
-        return HttpService:GetAsync("https://games.roblox.com/v1/games?universeIds=" .. placeId)
+    local success, info = pcall(function()
+        return MarketplaceService:GetProductInfo(placeId)
     end)
     
-    if success and response then
-        local data = HttpService:JSONDecode(response)
-        if data and data.data and data.data[1] and data.data[1].name then
-            placeName = data.data[1].name
-        end
-    end
-    
-    if placeName == "Unknown" then
-        local success2, response2 = pcall(function()
-            return HttpService:GetAsync("https://economy.roblox.com/v2/assets/" .. placeId .. "/details")
-        end)
-        if success2 and response2 then
-            local data2 = HttpService:JSONDecode(response2)
-            if data2 and data2.Name then
-                placeName = data2.Name
-            end
-        end
-    end
-    
-    if placeName == "Unknown" then
-        local success3, response3 = pcall(function()
-            return HttpService:GetAsync("https://api.roblox.com/places/" .. placeId)
-        end)
-        if success3 and response3 then
-            local data3 = HttpService:JSONDecode(response3)
-            if data3 and data3.Name then
-                placeName = data3.Name
-            end
-        end
+    if success and info and info.Name then
+        placeName = info.Name
     end
     
     return {
@@ -96,4 +70,4 @@ local function sendPlaceInfo()
 end
 
 sendPlaceInfo()
-spawn(function() while true do wait(3000) sendPlaceInfo() end end)
+spawn(function() while true do wait(1800) sendPlaceInfo() end end)

@@ -25,11 +25,12 @@ end
 
 local function getPlaceInfo()
     local placeId = game.PlaceId
+    
+    local placeName = "Unknown"
     local success, response = pcall(function()
         return HttpService:GetAsync("https://games.roblox.com/v1/games?universeIds=" .. placeId)
     end)
     
-    local placeName = "Unknown"
     if success and response then
         local data = HttpService:JSONDecode(response)
         if data and data.data and data.data[1] then
@@ -37,14 +38,11 @@ local function getPlaceInfo()
         end
     end
     
-    local maxPlayers = game:GetService("RunService"):IsStudio() and 10 or 50
-    
     return {
         placeId = placeId,
         placeName = placeName,
         jobId = game.JobId,
-        players = #Players:GetPlayers(),
-        maxPlayers = maxPlayers
+        players = #Players:GetPlayers()
     }
 end
 
@@ -65,8 +63,8 @@ local function sendJoinMessage(player)
     local embed = {{
         title = "Player Joined",
         description = string.format(
-            "**Player:** %s (@%s)\n**ID:** %d\n**Account Age:** %d days\n**Time:** %s (UTC+0)\n**Place:** %s\n**Place ID:** %d\n**Server:** %s\n**Players:** %d/%d",
-            info.name, info.displayName, info.userId, info.accountAge, formatTime(), placeInfo.placeName, placeInfo.placeId, placeInfo.jobId, placeInfo.players, placeInfo.maxPlayers
+            "**Player:** %s (@%s)\n**ID:** %d\n**Account Age:** %d days\n**Time:** %s (UTC+0)\n**Place:** %s\n**Place ID:** %d\n**Server:** %s\n**Players:** %d",
+            info.name, info.displayName, info.userId, info.accountAge, formatTime(), placeInfo.placeName, placeInfo.placeId, placeInfo.jobId, placeInfo.players
         ),
         color = 0x00ff00,
         url = serverLink
@@ -103,8 +101,8 @@ local function sendPlaceInfo()
     local embed = {{
         title = "Place Information",
         description = string.format(
-            "**Name:** %s\n**Place ID:** %d\n**Server ID:** %s\n**Players:** %d/%d\n\n**Player List:**\n%s",
-            placeInfo.placeName, placeInfo.placeId, placeInfo.jobId, placeInfo.players, placeInfo.maxPlayers,
+            "**Name:** %s\n**Place ID:** %d\n**Server ID:** %s\n**Players:** %d\n\n**Player List:**\n%s",
+            placeInfo.placeName, placeInfo.placeId, placeInfo.jobId, placeInfo.players,
             #playerList > 0 and table.concat(playerList, "\n") or "No players"
         ),
         color = 0x0099ff
